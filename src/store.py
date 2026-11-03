@@ -1,199 +1,20 @@
 """
 DuckDB analytical storage layer for clinical sessions, telemetry, patients, and local RxNorm concepts.
-Provides high-performance columnar ingestion, in-memory patient lookup, and sub-millisecond RxNorm resolution.
+Reads patient data directly from external CSV file (Base_de_datos_ficticia/pacientes.csv).
+Zero patient data hardcoded in Python.
 """
 
-import json
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import duckdb
 
 from src.exceptions import StorageError
-from src.types import ExtractedMedication, PatientAuditRecord, PatientRecord
+from src.types import ExtractedMedication, PatientAuditRecord
 
-CHILEAN_MOCK_PATIENTS: list[dict[str, Any]] = [
-    {
-        "rut": "12.345.678-5",
-        "nombre": "Eleanor Vance Riquelme",
-        "edad": 67,
-        "ciudad": "Santiago",
-        "enfermedades_cronicas": ["Diabetes Mellitus Tipo 2", "Insuficiencia Renal Moderada"],
-        "alergias": ["Ninguna conocida"],
-        "farmacos_actuales": ["Metformina 850mg c/12h oral"],
-    },
-    {
-        "rut": "18.901.234-K",
-        "nombre": "Carlos Silva Araya",
-        "edad": 24,
-        "ciudad": "Concepción",
-        "enfermedades_cronicas": [],
-        "alergias": ["Ninguna conocida"],
-        "farmacos_actuales": [],
-    },
-    {
-        "rut": "8.765.432-1",
-        "nombre": "Arthur Pendelton Morales",
-        "edad": 72,
-        "ciudad": "Valparaíso",
-        "enfermedades_cronicas": ["Trombosis Venosa Profunda", "Fibrilación Auricular"],
-        "alergias": ["Ninguna conocida"],
-        "farmacos_actuales": ["Warfarina 5mg diario oral"],
-    },
-    {
-        "rut": "15.892.431-2",
-        "nombre": "Valentina Henríquez Soto",
-        "edad": 45,
-        "ciudad": "Temuco",
-        "enfermedades_cronicas": ["Depresión Mayor Severa", "Fibromialgia"],
-        "alergias": ["Penicilina"],
-        "farmacos_actuales": ["Sertralina 50mg diario oral"],
-    },
-    {
-        "rut": "11.456.789-3",
-        "nombre": "Jorge Tapia Alarcón",
-        "edad": 61,
-        "ciudad": "Antofagasta",
-        "enfermedades_cronicas": ["Artritis Reumatoide Activa", "Hipertensión Arterial"],
-        "alergias": ["Sulfas"],
-        "farmacos_actuales": ["Metotrexato 15mg semanal oral", "Enalapril 10mg c/12h oral"],
-    },
-    {
-        "rut": "14.238.910-4",
-        "nombre": "Camila Figueroa Rojas",
-        "edad": 34,
-        "ciudad": "Viña del Mar",
-        "enfermedades_cronicas": ["Asma Bronquial Severa Persistente"],
-        "alergias": ["AINEs (Aspirina e Ibuprofeno desencadenan broncoespasmo severo)"],
-        "farmacos_actuales": ["Salbutamol 100mcg inhalador SOS", "Budesonida 200mcg c/12h"],
-    },
-    {
-        "rut": "16.789.012-7",
-        "nombre": "Mateo González Tapia",
-        "edad": 29,
-        "ciudad": "Rancagua",
-        "enfermedades_cronicas": ["Dolor Lumbar Crónico Post-Traumático"],
-        "alergias": ["Ninguna conocida"],
-        "farmacos_actuales": ["Paracetamol 500mg SOS"],
-    },
-    {
-        "rut": "9.345.678-9",
-        "nombre": "María José Castro Lagos",
-        "edad": 74,
-        "ciudad": "La Serena",
-        "enfermedades_cronicas": ["Insuficiencia Cardíaca Congestiva NYHA II", "Fibrilación Auricular"],
-        "alergias": ["Medio de Contraste Yodado (Shock Anafiláctico previo)"],
-        "farmacos_actuales": ["Warfarina 4mg diario oral", "Furosemida 40mg diario oral"],
-    },
-    {
-        "rut": "17.123.456-8",
-        "nombre": "Rodrigo Valenzuela Pinto",
-        "edad": 38,
-        "ciudad": "Talca",
-        "enfermedades_cronicas": ["Hipertensión Arterial Grado 1"],
-        "alergias": ["Ninguna conocida"],
-        "farmacos_actuales": ["Losartán 50mg diario oral"],
-    },
-    {
-        "rut": "13.567.890-1",
-        "nombre": "Sofía Muñoz Sepúlveda",
-        "edad": 53,
-        "ciudad": "Puerto Montt",
-        "enfermedades_cronicas": ["Diabetes Mellitus Tipo 2", "Neuropatía Diabética"],
-        "alergias": ["Tramadol (Reacción Adversa: Náusea y Vértigo Intratable)"],
-        "farmacos_actuales": ["Metformina 850mg c/12h oral", "Pregabalina 75mg nocturno"],
-    },
-    {
-        "rut": "10.234.567-4",
-        "nombre": "Pedro Pablo Morales Baeza",
-        "edad": 69,
-        "ciudad": "Iquique",
-        "enfermedades_cronicas": ["EPOC Gold 2", "Cardiopatía Isquémica Crónica"],
-        "alergias": ["Ninguna conocida"],
-        "farmacos_actuales": ["Aspirina 100mg diario oral", "Atorvastatina 20mg diario"],
-    },
-    {
-        "rut": "19.456.789-0",
-        "nombre": "Javiera Paz Arratia Núñez",
-        "edad": 22,
-        "ciudad": "Valdivia",
-        "enfermedades_cronicas": ["Gastritis Crónica Erosiva", "Anemia Ferropénica"],
-        "alergias": ["Ninguna conocida"],
-        "farmacos_actuales": ["Omeprazol 20mg ayunas oral"],
-    },
-    {
-        "rut": "15.112.334-K",
-        "nombre": "Gonzalo Ignacio Vergara Ríos",
-        "edad": 41,
-        "ciudad": "Chillán",
-        "enfermedades_cronicas": ["Trastorno Afectivo Bipolar Tipo 1"],
-        "alergias": ["Penicilina"],
-        "farmacos_actuales": ["Carbonato de Litio 300mg c/8h oral", "Quetiapina 100mg nocturno"],
-    },
-    {
-        "rut": "12.987.654-3",
-        "nombre": "Francisca Andrea Díaz Fuentes",
-        "edad": 58,
-        "ciudad": "Osorno",
-        "enfermedades_cronicas": ["Hipotiroidismo Primario", "Dislipidemia Mixta"],
-        "alergias": ["Ninguna conocida"],
-        "farmacos_actuales": ["Levotiroxina 100mcg ayunas oral"],
-    },
-    {
-        "rut": "16.445.566-7",
-        "nombre": "Andrés Felipe Pizarro Godoy",
-        "edad": 31,
-        "ciudad": "Copiapó",
-        "enfermedades_cronicas": ["Rinitis Alérgica Severa"],
-        "alergias": ["Metamizol / Dipirona"],
-        "farmacos_actuales": ["Levocetirizina 5mg diario oral"],
-    },
-    {
-        "rut": "7.890.123-2",
-        "nombre": "Héctor Hernán Navarrete Cruz",
-        "edad": 81,
-        "ciudad": "Punta Arenas",
-        "enfermedades_cronicas": ["Demencia Senil Tipo Alzheimer", "Artrosis Severa de Cadera"],
-        "alergias": ["Ninguna conocida"],
-        "farmacos_actuales": ["Donepezilo 10mg noche", "Paracetamol 1g c/8h oral"],
-    },
-    {
-        "rut": "14.778.899-1",
-        "nombre": "Daniela Paz Carrasco Leighton",
-        "edad": 36,
-        "ciudad": "Curicó",
-        "enfermedades_cronicas": ["Migraña Crónica Frecuente"],
-        "alergias": ["Codeína"],
-        "farmacos_actuales": ["Propranolol 40mg c/12h oral"],
-    },
-    {
-        "rut": "18.223.344-5",
-        "nombre": "Sebastián Ignacio Palma Toro",
-        "edad": 26,
-        "ciudad": "Calama",
-        "enfermedades_cronicas": [],
-        "alergias": ["Ninguna conocida"],
-        "farmacos_actuales": [],
-    },
-    {
-        "rut": "13.889.900-6",
-        "nombre": "Gloria del Carmen Urrutia Vidal",
-        "edad": 63,
-        "ciudad": "Los Ángeles",
-        "enfermedades_cronicas": ["Insuficiencia Renal Crónica Terminal (Hemodiálisis)"],
-        "alergias": ["AINEs"],
-        "farmacos_actuales": ["Eritropoyetina 4000 UI semanal", "Calcitriol 0.25mcg diario"],
-    },
-    {
-        "rut": "20.334.455-8",
-        "nombre": "Benjamín Nicolás Herrera Bustos",
-        "edad": 19,
-        "ciudad": "Quillota",
-        "enfermedades_cronicas": ["Asma Alérgica Intermitente"],
-        "alergias": ["Aspirina (Ácido Acetilsalicílico)"],
-        "farmacos_actuales": ["Salbutamol 100mcg inhalador SOS"],
-    },
-]
+BASE_DIR = Path(__file__).resolve().parent.parent
+PATIENTS_CSV = BASE_DIR / "Base_de_datos_ficticia" / "pacientes.csv"
 
 RXNORM_SEED_CONCEPTS: list[dict[str, Any]] = [
     # Metformin (RxCUI 6809)
@@ -263,14 +84,15 @@ RXNORM_SEED_CONCEPTS: list[dict[str, Any]] = [
 class ClinicalAuditStore:
     """
     Embedded analytical audit store powered by DuckDB.
-    Persists clinical sessions, extracted entities, patient registry, and local RxNorm concepts.
+    Persists clinical sessions, telemetry, and dynamically loads patients from Base_de_datos_ficticia/pacientes.csv.
     """
 
     def __init__(self, db_path: str = ":memory:") -> None:
         try:
             self._conn = duckdb.connect(db_path)
             self._initialize_schema()
-            self._seed_data()
+            self._load_patients_from_csv()
+            self._seed_rxnorm_concepts()
         except Exception as exc:
             raise StorageError(f"Failed to initialize DuckDB storage: {exc}") from exc
 
@@ -308,16 +130,6 @@ class ClinicalAuditStore:
                 checked_at VARCHAR NOT NULL
             );
 
-            CREATE TABLE IF NOT EXISTS patients (
-                rut VARCHAR PRIMARY KEY,
-                nombre VARCHAR NOT NULL,
-                edad INTEGER NOT NULL,
-                ciudad VARCHAR NOT NULL,
-                enfermedades_cronicas VARCHAR NOT NULL,
-                alergias VARCHAR NOT NULL,
-                farmacos_actuales VARCHAR NOT NULL
-            );
-
             CREATE TABLE IF NOT EXISTS rxnorm_concepts (
                 term_name VARCHAR PRIMARY KEY,
                 rxcui INTEGER NOT NULL,
@@ -337,28 +149,30 @@ class ClinicalAuditStore:
             """
         )
 
-    def _seed_data(self) -> None:
-        """Populate patients and local RxNorm concepts."""
-        # Seed patients
-        for p in CHILEAN_MOCK_PATIENTS:
-            self._conn.execute(
-                """
-                INSERT OR IGNORE INTO patients (
-                    rut, nombre, edad, ciudad, enfermedades_cronicas, alergias, farmacos_actuales
-                ) VALUES (?, ?, ?, ?, ?, ?, ?);
-                """,
-                [
-                    p["rut"],
-                    p["nombre"],
-                    p["edad"],
-                    p["ciudad"],
-                    json.dumps(p["enfermedades_cronicas"], ensure_ascii=False),
-                    json.dumps(p["alergias"], ensure_ascii=False),
-                    json.dumps(p["farmacos_actuales"], ensure_ascii=False),
-                ],
-            )
+    def _load_patients_from_csv(self) -> None:
+        """Load or reload patient table directly from Base_de_datos_ficticia/pacientes.csv."""
+        if not PATIENTS_CSV.exists():
+            raise StorageError(f"Patient database file not found: {PATIENTS_CSV}")
 
-        # Seed RxNorm concepts
+        # DuckDB creates the table directly from the CSV file
+        csv_path_escaped = str(PATIENTS_CSV).replace("\\", "/")
+        self._conn.execute(
+            f"""
+            CREATE OR REPLACE TABLE patients AS
+            SELECT 
+                TRIM(rut) AS rut,
+                TRIM(nombre) AS nombre,
+                CAST(edad AS INTEGER) AS edad,
+                TRIM(ciudad) AS ciudad,
+                TRIM(enfermedades_cronicas) AS enfermedades_cronicas,
+                TRIM(alergias) AS alergias,
+                TRIM(farmacos_actuales) AS farmacos_actuales
+            FROM read_csv_auto('{csv_path_escaped}', header=true);
+            """
+        )
+
+    def _seed_rxnorm_concepts(self) -> None:
+        """Populate local RxNorm concepts."""
         for item in RXNORM_SEED_CONCEPTS:
             self._conn.execute(
                 """
@@ -374,8 +188,25 @@ class ClinicalAuditStore:
                 ],
             )
 
+    def _format_patient_row(self, row: tuple) -> dict[str, Any]:
+        """Convert raw DuckDB row into structured clinical dictionary."""
+        def split_entries(val: str) -> list[str]:
+            if not val or val.lower() == "ninguna" or val.lower() == "ninguno":
+                return []
+            return [s.strip() for s in val.split(";") if s.strip()]
+
+        return {
+            "rut": row[0],
+            "nombre": row[1],
+            "edad": row[2],
+            "ciudad": row[3],
+            "enfermedades_cronicas": split_entries(row[4]),
+            "alergias": split_entries(row[5]),
+            "farmacos_actuales": split_entries(row[6]),
+        }
+
     def get_patient(self, rut: str) -> dict[str, Any] | None:
-        """Fetch patient clinical profile by Chilean RUT."""
+        """Fetch patient clinical profile by Chilean RUT directly from the external table."""
         clean_rut = rut.strip().upper()
         cursor = self._conn.execute(
             """
@@ -388,41 +219,18 @@ class ClinicalAuditStore:
         row = cursor.fetchone()
         if not row:
             return None
-
-        return {
-            "rut": row[0],
-            "nombre": row[1],
-            "edad": row[2],
-            "ciudad": row[3],
-            "enfermedades_cronicas": json.loads(row[4]),
-            "alergias": json.loads(row[5]),
-            "farmacos_actuales": json.loads(row[6]),
-        }
+        return self._format_patient_row(row)
 
     def list_patients(self) -> list[dict[str, Any]]:
-        """List all registered Chilean mock patients for the EHR directory."""
+        """List all patients from the CSV database."""
         cursor = self._conn.execute(
             "SELECT rut, nombre, edad, ciudad, enfermedades_cronicas, alergias, farmacos_actuales FROM patients ORDER BY nombre;"
         )
         rows = cursor.fetchall()
-        return [
-            {
-                "rut": r[0],
-                "nombre": r[1],
-                "edad": r[2],
-                "ciudad": r[3],
-                "enfermedades_cronicas": json.loads(r[4]),
-                "alergias": json.loads(r[5]),
-                "farmacos_actuales": json.loads(r[6]),
-            }
-            for r in rows
-        ]
+        return [self._format_patient_row(r) for r in rows]
 
     def resolve_rxnorm(self, raw_term: str) -> dict[str, Any] | None:
-        """
-        Sub-millisecond local in-process resolution of clinical term to RxNorm concept.
-        Runs completely offline without external HTTP dependency.
-        """
+        """Sub-millisecond local resolution of clinical term to RxNorm concept."""
         clean_term = raw_term.lower().strip()
         cursor = self._conn.execute(
             """

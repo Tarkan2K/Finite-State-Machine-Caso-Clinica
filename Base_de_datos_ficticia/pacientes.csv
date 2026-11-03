@@ -1,0 +1,21 @@
+rut,nombre,edad,ciudad,enfermedades_cronicas,alergias,farmacos_actuales
+12.345.678-5,Eleanor Vance Riquelme,67,Santiago,"Diabetes Mellitus Tipo 2; Insuficiencia Renal Moderada",Ninguna conocida,Metformina 850mg c/12h oral
+18.901.234-K,Carlos Silva Araya,24,Concepción,Ninguna,Ninguna conocida,Ninguno
+8.765.432-1,Arthur Pendelton Morales,72,Valparaíso,"Trombosis Venosa Profunda; Fibrilación Auricular",Ninguna conocida,Warfarina 5mg diario oral
+15.892.431-2,Valentina Henríquez Soto,45,Temuco,"Depresión Mayor Severa; Fibromialgia",Penicilina,Sertralina 50mg diario oral
+11.456.789-3,Jorge Tapia Alarcón,61,Antofagasta,"Artritis Reumatoide Activa; Hipertensión Arterial",Sulfas,"Metotrexato 15mg semanal oral; Enalapril 10mg c/12h oral"
+14.238.910-4,Camila Figueroa Rojas,34,Viña del Mar,Asma Bronquial Severa Persistente,AINEs (Aspirina e Ibuprofeno desencadenan broncoespasmo severo),"Salbutamol 100mcg inhalador SOS; Budesonida 200mcg c/12h"
+16.789.012-7,Mateo González Tapia,29,Rancagua,Dolor Lumbar Crónico Post-Traumático,Ninguna conocida,Paracetamol 500mg SOS
+9.345.678-9,María José Castro Lagos,74,La Serena,"Insuficiencia Cardíaca Congestiva NYHA II; Fibrilación Auricular",Medio de Contraste Yodado (Shock Anafiláctico previo),"Warfarina 4mg diario oral; Furosemida 40mg diario oral"
+17.123.456-8,Rodrigo Valenzuela Pinto,38,Talca,Hipertensión Arterial Grado 1,Ninguna conocida,Losartán 50mg diario oral
+13.567.890-1,Sofía Muñoz Sepúlveda,53,Puerto Montt,"Diabetes Mellitus Tipo 2; Neuropatía Diabética",Tramadol (Reacción Adversa: Náusea y Vértigo Intratable),"Metformina 850mg c/12h oral; Pregabalina 75mg nocturno"
+10.234.567-4,Pedro Pablo Morales Baeza,69,Iquique,"EPOC Gold 2; Cardiopatía Isquémica Crónica",Ninguna conocida,"Aspirina 100mg diario oral; Atorvastatina 20mg diario"
+19.456.789-0,Javiera Paz Arratia Núñez,22,Valdivia,"Gastritis Crónica Erosiva; Anemia Ferropénica",Ninguna conocida,Omeprazol 20mg ayunas oral
+15.112.334-K,Gonzalo Ignacio Vergara Ríos,41,Chillán,Trastorno Afectivo Bipolar Tipo 1,Penicilina,"Carbonato de Litio 300mg c/8h oral; Quetiapina 100mg nocturno"
+12.987.654-3,Francisca Andrea Díaz Fuentes,58,Osorno,"Hipotiroidismo Primario; Dislipidemia Mixta",Ninguna conocida,Levotiroxina 100mcg ayunas oral
+16.445.566-7,Andrés Felipe Pizarro Godoy,31,Copiapó,Rinitis Alérgica Severa,Metamizol / Dipirona,Levocetirizina 5mg diario oral
+7.890.123-2,Héctor Hernán Navarrete Cruz,81,Punta Arenas,"Demencia Senil Tipo Alzheimer; Artrosis Severa de Cadera",Ninguna conocida,"Donepezilo 10mg noche; Paracetamol 1g c/8h oral"
+14.778.899-1,Daniela Paz Carrasco Leighton,36,Curicó,Migraña Crónica Frecuente,Codeína,Propranolol 40mg c/12h oral
+18.223.344-5,Sebastián Ignacio Palma Toro,26,Calama,Ninguna,Ninguna conocida,Ninguno
+13.889.900-6,Gloria del Carmen Urrutia Vidal,63,Los Ángeles,Insuficiencia Renal Crónica Terminal (Hemodiálisis),AINEs,"Eritropoyetina 4000 UI semanal; Calcitriol 0.25mcg diario"
+20.334.455-8,Benjamín Nicolás Herrera Bustos,19,Quillota,Asma Alérgica Intermitente,Aspirina (Ácido Acetilsalicílico),Salbutamol 100mcg inhalador SOS
