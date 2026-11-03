@@ -6,7 +6,12 @@ reconcile patient chronic medications, enforce FSM invariants, and view DuckDB O
 
 import asyncio
 from datetime import datetime, timezone
+from pathlib import Path
 import sys
+
+# Ensure root directory is on sys.path for direct script execution
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import uuid
 from src.exceptions import ClinicalSafetyViolationError
 from src.fsm import AgentFSM

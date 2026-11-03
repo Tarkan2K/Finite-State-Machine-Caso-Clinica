@@ -4,6 +4,7 @@ Provides AST-based expression whitelisting and drug interaction detection.
 """
 
 import ast
+
 from src.exceptions import ToolSecurityError
 from src.types import DrugInteractionAlert
 
@@ -89,7 +90,7 @@ def validate_dose_expression(expression: str) -> float:
             )
 
     # Safe: the AST tree contains only arithmetic literals and operators
-    result = eval(compile(tree, filename="<ast_sandbox>", mode="eval"))  # noqa: S307
+    result = eval(compile(tree, filename="<ast_sandbox>", mode="eval"))
     return float(result)
 
 

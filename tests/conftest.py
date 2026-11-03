@@ -3,9 +3,11 @@ Pytest shared fixtures for fsm-agent-runtime test suite.
 Provides transient in-memory DuckDB stores, FSM instances, and FastAPI test clients.
 """
 
-from typing import Generator
+from collections.abc import Generator
+
 import pytest
 from fastapi.testclient import TestClient
+
 from src.api.routes import app, get_store
 from src.fsm import AgentFSM
 from src.store import ClinicalAuditStore

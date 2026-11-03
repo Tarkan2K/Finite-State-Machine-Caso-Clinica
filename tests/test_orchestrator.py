@@ -3,8 +3,10 @@ Integration tests for ClinicalOrchestrator.
 Validates end-to-end clinical note audits, safety intercepts, and FSM terminal failure gating.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 import pytest
+
 from src.exceptions import EngineError
 from src.orchestrator import ClinicalOrchestrator, extract_medications
 from src.store import ClinicalAuditStore
@@ -19,7 +21,7 @@ async def test_safe_clinical_note_audit_lifecycle(store: ClinicalAuditStore) -> 
         note_id="NOTE-SAFE-01",
         patient_ref="PAT-001",
         raw_text="Patient presents with headache. Administer paracetamol 500mg oral.",
-        recorded_at=datetime.now(timezone.utc),
+        recorded_at=datetime.now(UTC),
     )
 
     record = await orchestrator.execute_audit(note=note)
@@ -47,7 +49,7 @@ async def test_critical_drug_interaction_intercept(store: ClinicalAuditStore) ->
         note_id="NOTE-CRIT-01",
         patient_ref="PAT-002",
         raw_text="Patient 67M, administer Metformin 500mg BID and schedule contrast CT scan.",
-        recorded_at=datetime.now(timezone.utc),
+        recorded_at=datetime.now(UTC),
     )
 
     record = await orchestrator.execute_audit(note=note)

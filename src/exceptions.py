@@ -4,13 +4,11 @@
 class EngineError(Exception):
     """Base exception for all runtime engine failures."""
 
-    pass
 
 
 class StateTransitionError(EngineError):
     """Raised when an illegal FSM state transition is attempted."""
 
-    pass
 
 
 class ToolExecutionError(EngineError):
@@ -52,4 +50,3 @@ class ClinicalSafetyViolationError(EngineError):
 class StorageError(EngineError):
     """Raised when an audit record or telemetry write to DuckDB fails."""
 
-    pass

@@ -4,10 +4,11 @@ Coordinates FSM lifecycle, tool execution, safety sandboxing, and DuckDB telemet
 """
 
 import asyncio
-from datetime import datetime, timezone
 import re
 import time
 import uuid
+from datetime import UTC, datetime
+
 from src.exceptions import ClinicalSafetyViolationError, EngineError
 from src.fsm import AgentFSM
 from src.sandbox import check_drug_interactions
@@ -99,7 +100,7 @@ class ClinicalOrchestrator:
                 self._run_pipeline(note=note, max_steps=max_steps),
                 timeout=timeout_seconds,
             )
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             raise EngineError(
                 f"Clinical audit execution timed out after {timeout_seconds}s"
             ) from exc
@@ -189,7 +190,7 @@ class ClinicalOrchestrator:
             alerts=alerts,
             fsm_final_state=fsm.current_state,
             processing_time_ms=total_processing_ms,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
 
         # Persist session audit trail to DuckDB

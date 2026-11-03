@@ -4,6 +4,7 @@ Validates legal transitions, illegal state rejections, loop guardrails, and audi
 """
 
 import pytest
+
 from src.exceptions import StateTransitionError
 from src.fsm import AgentFSM
 from src.types import EngineState

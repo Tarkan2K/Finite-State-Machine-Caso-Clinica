@@ -5,7 +5,9 @@ Exposes clinical audit execution, session audit trail retrieval, and OLAP metric
 
 from contextlib import asynccontextmanager
 from typing import Any
+
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
+
 from src.exceptions import EngineError, StorageError
 from src.orchestrator import ClinicalOrchestrator
 from src.store import ClinicalAuditStore

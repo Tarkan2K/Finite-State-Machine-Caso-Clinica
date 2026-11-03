@@ -2,9 +2,10 @@
 
 """Data contracts and schemas for Aura Clinical runtime engine."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -35,7 +36,7 @@ class ClinicalNote(BaseModel):
     patient_ref: str = Field(description="Anonymized patient reference ID")
     raw_text: str = Field(description="Free-text clinical note written by clinician")
     recorded_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="Timestamp when the note was submitted",
     )
 
@@ -78,4 +79,4 @@ class PatientAuditRecord(BaseModel):
     alerts: list[DrugInteractionAlert]
     fsm_final_state: EngineState
     processing_time_ms: float
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

@@ -3,9 +3,11 @@ Unit and integration tests for the DuckDB analytical store (ClinicalAuditStore).
 Validates relational persistence, schema constraints, and OLAP latency percentiles.
 """
 
-from datetime import datetime, timezone
 import uuid
+from datetime import UTC, datetime
+
 import pytest
+
 from src.exceptions import StorageError
 from src.store import ClinicalAuditStore
 from src.types import (
@@ -30,7 +32,7 @@ def _create_dummy_record(
         alerts=[],
         fsm_final_state=EngineState.COMPLETED,
         processing_time_ms=12.4,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
 
 

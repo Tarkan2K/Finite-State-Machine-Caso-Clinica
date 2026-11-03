@@ -3,9 +3,11 @@ Finite State Machine (FSM) implementation for deterministic agent execution.
 Guarantees legal transitions, audit history tracking, and loop prevention.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Callable
+from datetime import UTC, datetime
+from typing import ClassVar
+
 from src.exceptions import StateTransitionError
 from src.types import EngineState
 
@@ -27,7 +29,7 @@ class AgentFSM:
     """
 
     # Explicit transition matrix: current_state -> set of valid next states
-    VALID_TRANSITIONS: dict[EngineState, set[EngineState]] = {
+    VALID_TRANSITIONS: ClassVar[dict[EngineState, set[EngineState]]] = {
         EngineState.INITIALIZED: {EngineState.PLANNING, EngineState.FAILED},
         EngineState.PLANNING: {
             EngineState.DISPATCHING_TOOL,
@@ -124,7 +126,7 @@ class AgentFSM:
         record = TransitionRecord(
             from_state=previous_state,
             to_state=target_state,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             step_number=self._step_count,
         )
         self._history.append(record)

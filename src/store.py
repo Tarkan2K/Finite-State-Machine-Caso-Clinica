@@ -3,9 +3,11 @@ DuckDB analytical storage layer for clinical sessions, telemetry, and audit trai
 Provides high-performance columnar ingestion and real-time latency percentile views.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
+
 import duckdb
+
 from src.exceptions import StorageError
 from src.types import ExtractedMedication, PatientAuditRecord
 
@@ -126,7 +128,7 @@ class ClinicalAuditStore:
                     medication.dose_mg,
                     medication.route,
                     extraction_latency_ms,
-                    datetime.now(timezone.utc).isoformat(),
+                    datetime.now(UTC).isoformat(),
                 ],
             )
         except Exception as exc:
@@ -157,7 +159,7 @@ class ClinicalAuditStore:
                     result,
                     latency_ms,
                     alert_description,
-                    datetime.now(timezone.utc).isoformat(),
+                    datetime.now(UTC).isoformat(),
                 ],
             )
         except Exception as exc:

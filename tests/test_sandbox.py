@@ -4,9 +4,9 @@ Validates arithmetic safety, denylist enforcement, and drug-drug contraindicatio
 """
 
 import pytest
+
 from src.exceptions import ToolSecurityError
 from src.sandbox import check_drug_interactions, validate_dose_expression
-
 
 # --- AST Expression Sandbox Tests ---
 
