@@ -1,6 +1,6 @@
 """
 Asynchronous Clinical Agent Orchestrator.
-Coordinates FSM lifecycle, tool execution, safety sandboxing, and DuckDB telemetry.
+Coordinates FSM lifecycle, tool execution, safety sandboxing, dosage ceiling checks, and DuckDB telemetry.
 """
 
 import asyncio
@@ -14,7 +14,7 @@ import httpx
 
 from src.exceptions import ClinicalSafetyViolationError, EngineError
 from src.fsm import AgentFSM
-from src.sandbox import check_drug_interactions
+from src.sandbox import check_dosage_safety, check_drug_interactions
 from src.store import ClinicalAuditStore
 from src.types import (
     ClinicalNote,
@@ -30,7 +30,12 @@ KNOWN_DRUGS_PATTERN = re.compile(
     r"\b(metformin|metformina|radiocontrast|contrast|contraste|warfarin|warfarina|aspirin|aspirina|tramadol|ssri|methotrexate|nsaid|paracetamol|ibuprofen|ibuprofeno|cocaine|cocaina|cocaína|fentanyl|fentanilo)\b",
     re.IGNORECASE,
 )
-DOSE_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*(mg|g|mcg|ml)", re.IGNORECASE)
+
+# Flexible dosage regex matching grams, milligrams, micrograms in English and Spanish
+DOSE_PATTERN = re.compile(
+    r"(\d+(?:[.,]\d+)?)\s*(mg|miligramos|miligramo|mcg|microgramos|g|gr|gramos|gramo)\b",
+    re.IGNORECASE,
+)
 
 # Bilingual normalization dictionary to active pharmaceutical ingredients
 NORMALIZATION_MAP = {
@@ -46,10 +51,31 @@ NORMALIZATION_MAP = {
 }
 
 
+def _parse_dose_to_mg(text: str) -> float | None:
+    """Parse dosage strings and normalize units to milligrams."""
+    match = DOSE_PATTERN.search(text)
+    if not match:
+        return None
+
+    raw_val_str = match.group(1).replace(",", ".")
+    unit = match.group(2).lower().strip()
+
+    try:
+        val = float(raw_val_str)
+    except ValueError:
+        return None
+
+    if unit in ("g", "gr", "gramos", "gramo"):
+        return val * 1000.0  # Convert grams to mg
+    if unit in ("mcg", "microgramos"):
+        return val / 1000.0  # Convert mcg to mg
+    return val  # Default is mg
+
+
 async def extract_medications(raw_text: str) -> list[ExtractedMedication]:
     """
-    Extract medication entities from clinical text.
-    If OLLAMA_HOST is set, queries local Ollama; otherwise uses fast regex extractor.
+    Extract medication entities and normalize dosage to milligrams.
+    If OLLAMA_HOST is set, queries local Ollama; otherwise uses fast bilingual extractor.
     """
     await asyncio.sleep(0.005)
 
@@ -57,7 +83,7 @@ async def extract_medications(raw_text: str) -> list[ExtractedMedication]:
     if ollama_host:
         try:
             prompt = (
-                f"Extract all medications as JSON list: [{{\"name\": \"drug\"}}]. Text: \"{raw_text}\""
+                f"Extract all medications as JSON list: [{{\"name\": \"drug\", \"dose_mg\": 500}}]. Text: \"{raw_text}\""
             )
             async with httpx.AsyncClient(timeout=1.0) as client:
                 res = await client.post(
@@ -70,23 +96,17 @@ async def extract_medications(raw_text: str) -> list[ExtractedMedication]:
                     if isinstance(parsed, list) and parsed:
                         return [
                             ExtractedMedication(
-                                name=NORMALIZATION_MAP.get(str(p["name"]).lower().strip(), str(p["name"]).lower().strip())
+                                name=NORMALIZATION_MAP.get(str(p["name"]).lower().strip(), str(p["name"]).lower().strip()),
+                                dose_mg=float(p.get("dose_mg")) if p.get("dose_mg") else None,
                             )
                             for p in parsed if "name" in p
                         ]
-        except (httpx.RequestError, KeyError):
+        except (httpx.RequestError, KeyError, ValueError):
             pass
 
-    # Deterministic bilingual extraction
+    # Deterministic bilingual extraction with unit normalization
     matches = KNOWN_DRUGS_PATTERN.findall(raw_text)
-    dose_match = DOSE_PATTERN.search(raw_text)
-
-    dose_val: float | None = None
-    if dose_match:
-        try:
-            dose_val = float(dose_match.group(1))
-        except ValueError:
-            dose_val = None
+    calculated_dose_mg = _parse_dose_to_mg(raw_text)
 
     extracted: list[ExtractedMedication] = []
     seen = set()
@@ -100,8 +120,8 @@ async def extract_medications(raw_text: str) -> list[ExtractedMedication]:
             extracted.append(
                 ExtractedMedication(
                     name=canonical_name,
-                    dose_mg=dose_val,
-                    route="oral" if ("oral" in raw_text.lower() or "boca" in raw_text.lower()) else None,
+                    dose_mg=calculated_dose_mg,
+                    route="oral" if ("oral" in raw_text.lower() or "boca" in raw_text.lower()) else "injected" if "inyectado" in raw_text.lower() else None,
                 )
             )
 
@@ -169,12 +189,17 @@ class ClinicalOrchestrator:
                     extraction_latency_ms=ext_latency_ms,
                 )
 
-            # Step 4: AWAITING_OBSERVATION -> REFLECTING (Safety Validation)
+            # Step 4: AWAITING_OBSERVATION -> REFLECTING (Multi-vector Safety Validation)
             fsm.transition(EngineState.REFLECTING)
             med_names = [m.name for m in medications]
 
             chk_start = time.perf_counter()
-            alerts = check_drug_interactions(med_names)
+            # 1. Check drug-drug contraindications
+            interaction_alerts = check_drug_interactions(med_names)
+            # 2. Check lethal dosage and posology ceilings (Overdose Guardrail)
+            dosage_alerts = check_dosage_safety(medications)
+            alerts = interaction_alerts + dosage_alerts
+
             chk_latency_ms = (time.perf_counter() - chk_start) * 1000.0
 
             # Log check result telemetry
@@ -184,7 +209,7 @@ class ClinicalOrchestrator:
             self._store.write_safety_check(
                 check_id=check_id,
                 session_id=session_id,
-                tool_name="drug_interaction_checker",
+                tool_name="clinical_safety_matrix",
                 result="CRITICAL" if has_critical else "SAFE",
                 latency_ms=chk_latency_ms,
                 alert_description=alerts[0].description if alerts else None,

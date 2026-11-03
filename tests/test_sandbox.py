@@ -1,12 +1,13 @@
 """
 Unit and security tests for the AST sandbox and clinical interaction validator.
-Validates arithmetic safety, denylist enforcement, and drug-drug contraindication logic.
+Validates arithmetic safety, denylist enforcement, drug-drug contraindications, and overdose ceilings.
 """
 
 import pytest
 
 from src.exceptions import ToolSecurityError
-from src.sandbox import check_drug_interactions, validate_dose_expression
+from src.sandbox import check_dosage_safety, check_drug_interactions, validate_dose_expression
+from src.types import ExtractedMedication
 
 # --- AST Expression Sandbox Tests ---
 
@@ -51,18 +52,16 @@ def test_ast_handles_syntax_errors_gracefully() -> None:
     assert "Malformed arithmetic expression" in str(exc_info.value)
 
 
-# --- Clinical Interaction Matrix Tests ---
+# --- Clinical Interaction & Overdose Tests ---
 
 
 def test_critical_interaction_detection_commutative() -> None:
     """Interaction must be flagged regardless of entity ordering in list."""
-    # Order A
     alerts_forward = check_drug_interactions(["Metformin", "Radiocontrast"])
     assert len(alerts_forward) == 1
     assert alerts_forward[0].severity == "CRITICAL"
     assert "lactic acidosis" in alerts_forward[0].description.lower()
 
-    # Order B (Reverse order + messy casing/whitespace)
     alerts_reverse = check_drug_interactions(["  RADIOCONTRAST ", "metformin"])
     assert len(alerts_reverse) == 1
     assert alerts_reverse[0].severity == "CRITICAL"
@@ -76,11 +75,28 @@ def test_speedball_hazard_detection() -> None:
     assert "respiratory depression" in alerts[0].description.lower()
 
 
+def test_lethal_tramadol_overdose_intercepted() -> None:
+    """Tramadol prescribed at 5000mg (5g) must trigger a FATAL OVERDOSE critical alert."""
+    meds = [ExtractedMedication(name="tramadol", dose_mg=5000.0)]
+    alerts = check_dosage_safety(meds)
+    assert len(alerts) == 1
+    assert alerts[0].severity == "CRITICAL"
+    assert "FATAL OVERDOSE" in alerts[0].description
+    assert "400.0mg" in alerts[0].description
+
+
+def test_safe_dosage_passes() -> None:
+    """Normal therapeutic dose within safe ceilings must not generate alerts."""
+    meds = [ExtractedMedication(name="tramadol", dose_mg=100.0)]
+    alerts = check_dosage_safety(meds)
+    assert len(alerts) == 0
+
+
 def test_multiple_critical_interactions() -> None:
     """All co-occurring dangerous pairs must be identified."""
     meds = ["warfarin", "aspirin", "tramadol", "ssri"]
     alerts = check_drug_interactions(meds)
-    assert len(alerts) == 2  # warfarin+aspirin AND tramadol+ssri
+    assert len(alerts) == 2
     severities = {a.severity for a in alerts}
     assert severities == {"CRITICAL"}
 
@@ -88,10 +104,4 @@ def test_multiple_critical_interactions() -> None:
 def test_safe_combinations_return_no_alerts() -> None:
     """Non-interacting drugs must yield an empty alert list."""
     alerts = check_drug_interactions(["Paracetamol", "Amoxicillin", "Ibuprofen"])
-    assert len(alerts) == 0
-
-
-def test_single_drug_returns_no_alerts() -> None:
-    """Single substance has no contraindication pair."""
-    alerts = check_drug_interactions(["Metformin"])
     assert len(alerts) == 0

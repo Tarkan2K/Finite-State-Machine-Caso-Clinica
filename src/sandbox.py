@@ -1,12 +1,13 @@
 """
 Execution sandbox and clinical safety validation layer.
-Provides AST-based expression whitelisting and drug interaction detection.
+Provides AST-based expression whitelisting, drug-drug contraindication detection,
+and posology ceiling guardrails (lethal overdose protection).
 """
 
 import ast
 
 from src.exceptions import ToolSecurityError
-from src.types import DrugInteractionAlert
+from src.types import DrugInteractionAlert, ExtractedMedication
 
 # Denylist of unsafe AST identifiers for mathematical evaluation
 BLOCKED_NAMES = frozenset(
@@ -53,6 +54,17 @@ CRITICAL_INTERACTIONS: dict[frozenset[str], str] = {
     ),
 }
 
+# Maximum clinical daily dosage ceilings in milligrams (Posology Guardrails)
+MAX_SAFE_DAILY_DOSES_MG: dict[str, float] = {
+    "tramadol": 400.0,       # Max 400mg/day. Overdose causes intractable seizures, apnea, and coma.
+    "paracetamol": 4000.0,   # Max 4000mg/day (4g). Overdose causes acute fulminant hepatic necrosis.
+    "metformin": 2550.0,     # Max 2550mg/day. Overdose triggers severe metformin-associated lactic acidosis.
+    "aspirin": 4000.0,       # Max 4000mg/day. Overdose triggers acute salicylate toxicity and metabolic acidosis.
+    "ibuprofen": 3200.0,     # Max 3200mg/day. Severe GI hemorrhage and acute renal failure.
+    "fentanyl": 0.2,         # 200mcg (0.2mg). Extremely potent; milligram doses are universally fatal.
+    "cocaine": 0.0,          # Illicit substance: zero therapeutic threshold allowed.
+}
+
 
 def validate_dose_expression(expression: str) -> float:
     """
@@ -73,28 +85,24 @@ def validate_dose_expression(expression: str) -> float:
         ) from exc
 
     for node in ast.walk(tree):
-        # Disallow function or method calls entirely (e.g., os.system())
         if isinstance(node, ast.Call):
             raise ToolSecurityError(
                 tool_name="dose_calculator",
                 message="Function and method calls are strictly forbidden in dose calculation.",
             )
 
-        # Disallow attribute access (e.g., __class__, __subclasses__)
         if isinstance(node, ast.Attribute):
             raise ToolSecurityError(
                 tool_name="dose_calculator",
                 message="Attribute access is forbidden in dose calculation.",
             )
 
-        # Disallow blocked identifiers
         if isinstance(node, ast.Name) and node.id in BLOCKED_NAMES:
             raise ToolSecurityError(
                 tool_name="dose_calculator",
                 message=f"Unauthorized identifier blocked by AST policy: {node.id}",
             )
 
-    # Safe: the AST tree contains only arithmetic literals and operators
     result = eval(compile(tree, filename="<ast_sandbox>", mode="eval"))
     return float(result)
 
@@ -102,9 +110,6 @@ def validate_dose_expression(expression: str) -> float:
 def check_drug_interactions(medications: list[str]) -> list[DrugInteractionAlert]:
     """
     Cross-reference extracted medications against known critical interactions.
-
-    Returns:
-        List of DrugInteractionAlert containing critical contraindications.
     """
     normalized = [med.lower().strip() for med in medications]
     alerts: list[DrugInteractionAlert] = []
@@ -124,3 +129,36 @@ def check_drug_interactions(medications: list[str]) -> list[DrugInteractionAlert
                 )
 
     return alerts
+
+
+def check_dosage_safety(medications: list[ExtractedMedication]) -> list[DrugInteractionAlert]:
+    """
+    Evaluate prescribed dosages against maximum safe pharmacological ceilings.
+    Flags lethal overdoses and toxic quantities before dispensing.
+    """
+    overdose_alerts: list[DrugInteractionAlert] = []
+
+    for med in medications:
+        if med.dose_mg is None:
+            continue
+
+        drug_name = med.name.lower().strip()
+        max_limit = MAX_SAFE_DAILY_DOSES_MG.get(drug_name)
+
+        if max_limit is not None and med.dose_mg > max_limit:
+            ratio = (med.dose_mg / max_limit) * 100.0 if max_limit > 0 else 0
+            overdose_alerts.append(
+                DrugInteractionAlert(
+                    drug_a=drug_name,
+                    drug_b="LETHAL_OVERDOSE",
+                    severity="CRITICAL",
+                    description=(
+                        f"FATAL OVERDOSE DETECTED: Prescribed dose of {med.name.upper()} "
+                        f"({med.dose_mg:.1f}mg) exceeds the maximum safe ceiling of {max_limit:.1f}mg "
+                        f"({ratio:.0f}% of ceiling). Imminent risk of severe toxicity, organ collapse, or death."
+                    ),
+                    cie10_codes=["T36-T50", "T40.9"],
+                )
+            )
+
+    return overdose_alerts
