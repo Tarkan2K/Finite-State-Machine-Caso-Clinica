@@ -1,10 +1,10 @@
 """
 Unit and integration tests for the DuckDB analytical store (ClinicalAuditStore).
-Validates relational persistence, schema constraints, and OLAP latency percentiles.
+Validates relational persistence, FSM checkpoint storage, schema constraints, and OLAP latency percentiles.
 """
 
+from datetime import timezone, datetime
 import uuid
-from datetime import UTC, datetime
 
 import pytest
 
@@ -25,14 +25,14 @@ def _create_dummy_record(
     """Helper factory for generating valid audit records."""
     return PatientAuditRecord(
         session_id=session_id or str(uuid.uuid4()),
-        patient_ref="PAT-TEST-001",
+        patient_ref="18.901.234-K",
         note_text="Administer paracetamol 500mg oral",
         medications_extracted=["paracetamol"],
         safety_status=status,
         alerts=[],
         fsm_final_state=EngineState.COMPLETED,
         processing_time_ms=12.4,
-        created_at=datetime.now(UTC),
+        created_at=datetime.now(timezone.utc),
     )
 
 
@@ -49,6 +49,21 @@ def test_session_write_and_read(store: ClinicalAuditStore) -> None:
     assert persisted["fsm_final_state"] == record.fsm_final_state.value
 
 
+def test_fsm_checkpoint_save_and_load(store: ClinicalAuditStore) -> None:
+    """FSM checkpoint must be persisted and rehydrated from DuckDB."""
+    ckpt = {
+        "current_state": "DISPATCHING_TOOL",
+        "step_count": 2,
+        "max_steps": 10,
+        "history": [],
+    }
+    store.save_checkpoint("sess-ckpt-01", ckpt)
+    loaded = store.load_checkpoint("sess-ckpt-01")
+    assert loaded is not None
+    assert loaded["current_state"] == "DISPATCHING_TOOL"
+    assert loaded["step_count"] == 2
+
+
 def test_nonexistent_session_returns_none(store: ClinicalAuditStore) -> None:
     """Querying an unknown session_id must return None."""
     assert store.get_session("nonexistent-uuid") is None
@@ -60,7 +75,6 @@ def test_duplicate_session_raises_storage_error(store: ClinicalAuditStore) -> No
     store.write_session(record)
 
     with pytest.raises(StorageError) as exc_info:
-        # Re-inserting the same session_id must trigger PK collision
         store.write_session(record)
     assert "Failed to persist clinical session" in str(exc_info.value)
 
@@ -84,7 +98,6 @@ def test_olap_latency_percentiles_calculation(store: ClinicalAuditStore) -> None
     session = _create_dummy_record()
     store.write_session(session)
 
-    # Insert a sequence of latency observations: 1.0, 2.0, 3.0, 4.0, 10.0 ms
     latencies = [1.0, 2.0, 3.0, 4.0, 10.0]
     for lat in latencies:
         store.write_safety_check(

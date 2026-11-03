@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sistema Clínico — Ficha de Paciente y Auditoría</title>
+  <meta name="description" content="Sistema clínico de ficha electrónica de pacientes y auditoría farmacológica de prescripciones.">
+  <meta property="og:title" content="Sistema Clínico — Ficha de Paciente y Auditoría">
+  <meta property="og:description" content="Sistema clínico de ficha electrónica de pacientes y auditoría farmacológica de prescripciones.">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -231,9 +234,9 @@
     <div class="fsm-bar">
       <div class="fsm-step" id="step-INIT">1. RUT Validado</div>
       <div class="fsm-step" id="step-PLAN">2. Planificación</div>
-      <div class="fsm-step" id="step-EXTRACT">3. Extracción IA</div>
-      <div class="fsm-step" id="step-RXNORM">4. Mapeo RxNorm</div>
-      <div class="fsm-step" id="step-SAFETY">5. Matriz & Alergias</div>
+      <div class="fsm-step" id="step-EXTRACT">3. Análisis IA Clínica</div>
+      <div class="fsm-step" id="step-RXNORM">4. Sandbox AST (Dosis)</div>
+      <div class="fsm-step" id="step-SAFETY">5. Verificación Clínica</div>
       <div class="fsm-step" id="step-VERDICT">6. Veredicto Final</div>
     </div>
 
@@ -379,7 +382,7 @@
         record.alerts.forEach(a => {
           alertsHtml += `
             <div style="background: #FFF; border: 1px solid #CC0000; padding: 8px; margin-top: 6px; font-size: 11px;">
-              <strong style="color: #990000; text-transform: uppercase;">ALERTA: ${a.drug_a} + ${a.drug_b}</strong>
+              <strong style="color: #990000; text-transform: uppercase;">ALERTA [${a.severity}]</strong>
               <div style="color: #333; margin-top: 2px;">${a.description}</div>
               <div style="color: #666; font-size: 10px; margin-top: 3px;">Códigos CIE-10: ${a.cie10_codes.join(', ')}</div>
             </div>

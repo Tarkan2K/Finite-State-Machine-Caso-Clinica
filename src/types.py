@@ -1,6 +1,6 @@
 """Data contracts and schemas for Aura Clinical runtime engine."""
 
-from datetime import UTC, datetime
+from datetime import timezone, datetime
 from enum import Enum
 from typing import Literal
 
@@ -36,42 +36,40 @@ class PatientRecord(BaseModel):
     nombre: str = Field(description="Nombre completo del paciente")
     edad: int = Field(description="Edad en años")
     ciudad: str = Field(description="Ciudad de residencia")
-    enfermedades_cronicas: list[str] = Field(
-        default_factory=list, description="Patologías crónicas de base"
-    )
-    alergias: list[str] = Field(
-        default_factory=list, description="Alergias conocidas a fármacos o sustancias"
-    )
-    farmacos_actuales: list[str] = Field(
-        default_factory=list, description="Fármacos y dosis crónicas actuales"
-    )
+    enfermedades_cronicas: list[str] = Field(default_factory=list)
+    alergias: list[str] = Field(default_factory=list)
+    farmacos_actuales: list[str] = Field(default_factory=list)
 
 
 class ClinicalNote(BaseModel):
     """Unstructured text written by a physician at bedside."""
 
-    note_id: str = Field(description="Unique UUID for the clinical note")
-    patient_ref: str = Field(description="RUT o identificador del paciente")
+    note_id: str = Field(description="Unique ID for the clinical note")
+    patient_ref: str = Field(description="RUT del paciente")
     raw_text: str = Field(description="Free-text clinical note written by clinician")
-    recorded_at: datetime = Field(
-        default_factory=lambda: datetime.now(UTC),
-        description="Timestamp when the note was submitted",
-    )
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ExtractedMedication(BaseModel):
-    """A medication span extracted from unstructured clinical text."""
+    """A medication extracted from clinical text with AST-evaluated daily dosage."""
 
     name: str = Field(description="Normalized active pharmaceutical ingredient")
-    dose_mg: float | None = Field(default=None, description="Extracted dose in milligrams")
+    dose_expression: str | None = Field(
+        default=None,
+        description="Arithmetic expression for daily dose in mg (e.g. '20 * 1000 * (24 / 8)')",
+    )
+    dose_mg: float | None = Field(
+        default=None, description="Evaluated total daily dose in milligrams"
+    )
+    max_safe_daily_mg: float | None = Field(
+        default=None, description="Maximum safe daily dosage ceiling in milligrams"
+    )
     route: str | None = Field(default=None, description="Administration route: oral, IV, IM, etc.")
 
 
 class DrugInteractionAlert(BaseModel):
-    """Structured clinical alert identifying a dangerous drug-drug interaction or contraindication."""
+    """Structured clinical alert identifying a dangerous interaction, allergy, condition, or overdose."""
 
-    drug_a: str = Field(description="First interacting active substance or allergen")
-    drug_b: str = Field(description="Second interacting active substance or hazard type")
     severity: Literal["LOW", "MODERATE", "CRITICAL"] = Field(
         description="Clinical severity grade"
     )
@@ -82,10 +80,7 @@ class DrugInteractionAlert(BaseModel):
 
 
 class PatientAuditRecord(BaseModel):
-    """
-    Immutable audit record stored for legal compliance and telemetry.
-    Configured with frozen=True to prevent post-creation tampering.
-    """
+    """Immutable audit record stored for legal compliance and telemetry."""
 
     model_config = ConfigDict(frozen=True)
 

@@ -22,10 +22,10 @@ STATIC_INDEX = Path(__file__).resolve().parent / "static" / "index.html"
 
 
 def get_store() -> ClinicalAuditStore:
-    """Dependency provider for DuckDB audit store."""
+    """Dependency provider for persistent DuckDB audit store."""
     global _store
     if _store is None:
-        _store = ClinicalAuditStore(db_path=":memory:")
+        _store = ClinicalAuditStore()
     return _store
 
 

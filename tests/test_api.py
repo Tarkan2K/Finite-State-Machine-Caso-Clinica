@@ -24,7 +24,7 @@ def test_execute_audit_safe_endpoint(client: TestClient) -> None:
     """POST /api/v1/clinical/audit must return 200 with SAFE verdict for clean notes."""
     payload = {
         "note_id": "API-TEST-001",
-        "patient_ref": "PAT-API-01",
+        "patient_ref": "18.901.234-K",
         "raw_text": "Patient has mild fever. Administer paracetamol 500mg.",
     }
     response = client.post("/api/v1/clinical/audit", json=payload)
@@ -33,7 +33,7 @@ def test_execute_audit_safe_endpoint(client: TestClient) -> None:
     data = response.json()
     assert data["safety_status"] == "SAFE"
     assert data["fsm_final_state"] == "COMPLETED"
-    assert data["patient_ref"] == "PAT-API-01"
+    assert data["patient_ref"] == "18.901.234-K"
     assert "session_id" in data
 
 
@@ -41,7 +41,7 @@ def test_execute_audit_critical_block_endpoint(client: TestClient) -> None:
     """POST /api/v1/clinical/audit must return CRITICAL_BLOCK on dangerous drug combinations."""
     payload = {
         "note_id": "API-TEST-CRIT",
-        "patient_ref": "PAT-API-02",
+        "patient_ref": "12.345.678-5",
         "raw_text": "Administer metformin 500mg and schedule contrast tomography scan.",
     }
     response = client.post("/api/v1/clinical/audit", json=payload)
@@ -69,7 +69,7 @@ def test_get_session_audit_flow(client: TestClient) -> None:
     # 1. Trigger an audit
     payload = {
         "note_id": "API-SESSION-001",
-        "patient_ref": "PAT-SESSION-01",
+        "patient_ref": "18.901.234-K",
         "raw_text": "Administer aspirin 100mg oral.",
     }
     create_res = client.post("/api/v1/clinical/audit", json=payload)
@@ -80,7 +80,7 @@ def test_get_session_audit_flow(client: TestClient) -> None:
     get_res = client.get(f"/api/v1/clinical/sessions/{session_id}")
     assert get_res.status_code == 200
     assert get_res.json()["session_id"] == session_id
-    assert get_res.json()["patient_ref"] == "PAT-SESSION-01"
+    assert get_res.json()["patient_ref"] == "18.901.234-K"
 
 
 def test_get_nonexistent_session_returns_404(client: TestClient) -> None:
@@ -95,7 +95,7 @@ def test_get_safety_metrics_endpoint(client: TestClient) -> None:
     # Run an audit to generate data
     payload = {
         "note_id": "API-METRIC-01",
-        "patient_ref": "PAT-METRIC-01",
+        "patient_ref": "12.345.678-5",
         "raw_text": "Metformin 500mg and contrast study.",
     }
     client.post("/api/v1/clinical/audit", json=payload)

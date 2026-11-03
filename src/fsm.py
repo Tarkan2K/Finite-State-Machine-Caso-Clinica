@@ -1,12 +1,12 @@
 """
 Finite State Machine (FSM) implementation for deterministic agent execution.
-Guarantees legal transitions, audit history tracking, and loop prevention.
+Supports strict transition validation, loop prevention, and checkpoint serialization/recovery.
 """
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from typing import ClassVar
+from datetime import timezone, datetime
+from typing import Any, ClassVar
 
 from src.exceptions import StateTransitionError
 from src.types import EngineState
@@ -24,11 +24,10 @@ class TransitionRecord:
 
 class AgentFSM:
     """
-    Hardened Finite State Machine enforcing strict execution lifecycle.
-    Guarantees that agents cannot skip safety checks or enter infinite loops.
+    Hardened Finite State Machine enforcing strict execution lifecycle,
+    checkpoint persistence, and recovery from interrupted runs.
     """
 
-    # Explicit transition matrix: current_state -> set of valid next states
     VALID_TRANSITIONS: ClassVar[dict[EngineState, set[EngineState]]] = {
         EngineState.INITIALIZED: {EngineState.PLANNING, EngineState.FAILED},
         EngineState.PLANNING: {
@@ -45,13 +44,13 @@ class AgentFSM:
             EngineState.FAILED,
         },
         EngineState.REFLECTING: {
-            EngineState.PLANNING,          # Loop for multi-step reasoning
-            EngineState.DISPATCHING_TOOL,  # Direct tool retry
-            EngineState.COMPLETED,         # Clean finish
-            EngineState.FAILED,            # Safety block or fatal error
+            EngineState.PLANNING,
+            EngineState.DISPATCHING_TOOL,
+            EngineState.COMPLETED,
+            EngineState.FAILED,
         },
-        EngineState.COMPLETED: set(),      # Terminal absorbing state
-        EngineState.FAILED: set(),         # Terminal absorbing state
+        EngineState.COMPLETED: set(),
+        EngineState.FAILED: set(),
     }
 
     def __init__(
@@ -59,13 +58,6 @@ class AgentFSM:
         max_steps: int = 10,
         on_transition: Callable[[TransitionRecord], None] | None = None,
     ) -> None:
-        """
-        Initialize the FSM in the INITIALIZED state.
-
-        Args:
-            max_steps: Maximum allowed state transitions before loop abort.
-            on_transition: Optional callback triggered on every legal transition.
-        """
         self._current_state: EngineState = EngineState.INITIALIZED
         self._step_count: int = 0
         self._max_steps: int = max_steps
@@ -74,42 +66,34 @@ class AgentFSM:
 
     @property
     def current_state(self) -> EngineState:
-        """Read-only access to current FSM state."""
         return self._current_state
 
     @property
+    def is_terminal(self) -> bool:
+        return self._current_state in (EngineState.COMPLETED, EngineState.FAILED)
+
+    @property
     def step_count(self) -> int:
-        """Total number of transitions executed."""
         return self._step_count
 
     @property
     def history(self) -> list[TransitionRecord]:
-        """Read-only snapshot of all historical transitions."""
         return list(self._history)
 
     def transition(self, target_state: EngineState) -> None:
-        """
-        Attempt a state transition to target_state.
-
-        Raises:
-            StateTransitionError: If transition is illegal, machine is terminated,
-                                  or max_steps limit is exceeded.
-        """
-        # Guardrail 1: Absorbing terminal states cannot transition anywhere
-        if self._current_state in (EngineState.COMPLETED, EngineState.FAILED):
+        """Validate and execute a transition to target_state."""
+        if self.is_terminal:
             raise StateTransitionError(
                 f"Cannot transition from terminal state '{self._current_state.value}' "
                 f"to '{target_state.value}'."
             )
 
-        # Guardrail 2: Loop prevention threshold
         if self._step_count >= self._max_steps:
             raise StateTransitionError(
                 f"FSM exceeded maximum execution steps limit ({self._max_steps}). "
-                f"Halting execution to prevent infinite loop."
+                "Halting execution to prevent infinite loop."
             )
 
-        # Guardrail 3: Strict transition matrix validation
         allowed_next = self.VALID_TRANSITIONS.get(self._current_state, set())
         if target_state not in allowed_next:
             raise StateTransitionError(
@@ -118,7 +102,6 @@ class AgentFSM:
                 f"Valid transitions are: {[s.value for s in allowed_next]}"
             )
 
-        # Apply transition
         previous_state = self._current_state
         self._current_state = target_state
         self._step_count += 1
@@ -126,7 +109,7 @@ class AgentFSM:
         record = TransitionRecord(
             from_state=previous_state,
             to_state=target_state,
-            timestamp=datetime.now(UTC),
+            timestamp=datetime.now(timezone.utc),
             step_number=self._step_count,
         )
         self._history.append(record)
@@ -134,8 +117,8 @@ class AgentFSM:
         if self._on_transition:
             self._on_transition(record)
 
-    def to_checkpoint(self) -> dict[str, object]:
-        """Serialize current state and history for persistence/recovery."""
+    def to_checkpoint(self) -> dict[str, Any]:
+        """Serialize current state and transition history for persistence."""
         return {
             "current_state": self._current_state.value,
             "step_count": self._step_count,
@@ -150,3 +133,27 @@ class AgentFSM:
                 for r in self._history
             ],
         }
+
+    @classmethod
+    def from_checkpoint(
+        cls,
+        checkpoint: dict[str, Any],
+        on_transition: Callable[[TransitionRecord], None] | None = None,
+    ) -> "AgentFSM":
+        """Rehydrate an AgentFSM instance from a persisted checkpoint dictionary."""
+        fsm = cls(
+            max_steps=int(checkpoint.get("max_steps", 10)),
+            on_transition=on_transition,
+        )
+        fsm._current_state = EngineState(checkpoint["current_state"])
+        fsm._step_count = int(checkpoint["step_count"])
+        fsm._history = [
+            TransitionRecord(
+                from_state=EngineState(item["from_state"]),
+                to_state=EngineState(item["to_state"]),
+                timestamp=datetime.fromisoformat(item["timestamp"]),
+                step_number=int(item["step_number"]),
+            )
+            for item in checkpoint.get("history", [])
+        ]
+        return fsm

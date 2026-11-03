@@ -1,10 +1,10 @@
 """
-DuckDB analytical storage layer for clinical sessions, telemetry, patients, and local RxNorm concepts.
+DuckDB analytical storage layer for clinical sessions, FSM checkpoints, telemetry, and patients.
 Reads patient data directly from external CSV file (Base_de_datos_ficticia/pacientes.csv).
-Zero patient data hardcoded in Python.
 """
 
-from datetime import UTC, datetime
+import json
+from datetime import timezone, datetime
 from pathlib import Path
 from typing import Any
 
@@ -15,89 +15,25 @@ from src.types import ExtractedMedication, PatientAuditRecord
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 PATIENTS_CSV = BASE_DIR / "Base_de_datos_ficticia" / "pacientes.csv"
-
-RXNORM_SEED_CONCEPTS: list[dict[str, Any]] = [
-    # Metformin (RxCUI 6809)
-    {"rxcui": 6809, "term_name": "metformin", "canonical_name": "metformin", "category": "antidiabetic"},
-    {"rxcui": 6809, "term_name": "metformina", "canonical_name": "metformin", "category": "antidiabetic"},
-    {"rxcui": 6809, "term_name": "glifage", "canonical_name": "metformin", "category": "antidiabetic"},
-    {"rxcui": 6809, "term_name": "hipoglucin", "canonical_name": "metformin", "category": "antidiabetic"},
-    # Radiocontrast Media (RxCUI 376261)
-    {"rxcui": 376261, "term_name": "radiocontrast", "canonical_name": "radiocontrast", "category": "diagnostic"},
-    {"rxcui": 376261, "term_name": "contrast", "canonical_name": "radiocontrast", "category": "diagnostic"},
-    {"rxcui": 376261, "term_name": "contraste", "canonical_name": "radiocontrast", "category": "diagnostic"},
-    {"rxcui": 376261, "term_name": "medio de contraste", "canonical_name": "radiocontrast", "category": "diagnostic"},
-    {"rxcui": 376261, "term_name": "contrast study", "canonical_name": "radiocontrast", "category": "diagnostic"},
-    {"rxcui": 376261, "term_name": "contraste yodado", "canonical_name": "radiocontrast", "category": "diagnostic"},
-    # Warfarin (RxCUI 11289)
-    {"rxcui": 11289, "term_name": "warfarin", "canonical_name": "warfarin", "category": "anticoagulant"},
-    {"rxcui": 11289, "term_name": "warfarina", "canonical_name": "warfarin", "category": "anticoagulant"},
-    {"rxcui": 11289, "term_name": "coumadin", "canonical_name": "warfarin", "category": "anticoagulant"},
-    # Aspirin (RxCUI 1191)
-    {"rxcui": 1191, "term_name": "aspirin", "canonical_name": "aspirin", "category": "antiplatelet_nsaid"},
-    {"rxcui": 1191, "term_name": "aspirina", "canonical_name": "aspirin", "category": "antiplatelet_nsaid"},
-    {"rxcui": 1191, "term_name": "cardioaspirina", "canonical_name": "aspirin", "category": "antiplatelet_nsaid"},
-    {"rxcui": 1191, "term_name": "acido acetilsalicilico", "canonical_name": "aspirin", "category": "antiplatelet_nsaid"},
-    {"rxcui": 1191, "term_name": "ácido acetilsalicílico", "canonical_name": "aspirin", "category": "antiplatelet_nsaid"},
-    # Paracetamol / Acetaminophen (RxCUI 161)
-    {"rxcui": 161, "term_name": "paracetamol", "canonical_name": "paracetamol", "category": "analgesic"},
-    {"rxcui": 161, "term_name": "acetaminophen", "canonical_name": "paracetamol", "category": "analgesic"},
-    {"rxcui": 161, "term_name": "acetaminofen", "canonical_name": "paracetamol", "category": "analgesic"},
-    {"rxcui": 161, "term_name": "acetaminofén", "canonical_name": "paracetamol", "category": "analgesic"},
-    {"rxcui": 161, "term_name": "tylenol", "canonical_name": "paracetamol", "category": "analgesic"},
-    {"rxcui": 161, "term_name": "kitadol", "canonical_name": "paracetamol", "category": "analgesic"},
-    {"rxcui": 161, "term_name": "panadol", "canonical_name": "paracetamol", "category": "analgesic"},
-    {"rxcui": 161, "term_name": "tempra", "canonical_name": "paracetamol", "category": "analgesic"},
-    # Tramadol (RxCUI 10689)
-    {"rxcui": 10689, "term_name": "tramadol", "canonical_name": "tramadol", "category": "opioid"},
-    {"rxcui": 10689, "term_name": "tramal", "canonical_name": "tramadol", "category": "opioid"},
-    {"rxcui": 10689, "term_name": "minitran", "canonical_name": "tramadol", "category": "opioid"},
-    # SSRIs (RxCUI 36437)
-    {"rxcui": 36437, "term_name": "ssri", "canonical_name": "ssri", "category": "antidepressant"},
-    {"rxcui": 36437, "term_name": "isrs", "canonical_name": "ssri", "category": "antidepressant"},
-    {"rxcui": 36437, "term_name": "sertralina", "canonical_name": "ssri", "category": "antidepressant"},
-    {"rxcui": 36437, "term_name": "sertraline", "canonical_name": "ssri", "category": "antidepressant"},
-    {"rxcui": 36437, "term_name": "fluoxetina", "canonical_name": "ssri", "category": "antidepressant"},
-    {"rxcui": 36437, "term_name": "fluoxetine", "canonical_name": "ssri", "category": "antidepressant"},
-    # Methotrexate (RxCUI 6851)
-    {"rxcui": 6851, "term_name": "methotrexate", "canonical_name": "methotrexate", "category": "immunosuppressive"},
-    {"rxcui": 6851, "term_name": "metotrexato", "canonical_name": "methotrexate", "category": "immunosuppressive"},
-    # NSAIDs (RxCUI 5640)
-    {"rxcui": 5640, "term_name": "nsaid", "canonical_name": "nsaid", "category": "nsaid"},
-    {"rxcui": 5640, "term_name": "aine", "canonical_name": "nsaid", "category": "nsaid"},
-    {"rxcui": 5640, "term_name": "aines", "canonical_name": "nsaid", "category": "nsaid"},
-    {"rxcui": 5640, "term_name": "ibuprofen", "canonical_name": "ibuprofen", "category": "nsaid"},
-    {"rxcui": 5640, "term_name": "ibuprofeno", "canonical_name": "ibuprofen", "category": "nsaid"},
-    {"rxcui": 5640, "term_name": "advil", "canonical_name": "ibuprofen", "category": "nsaid"},
-    {"rxcui": 5640, "term_name": "motrin", "canonical_name": "ibuprofen", "category": "nsaid"},
-    # Cocaine (RxCUI 2670)
-    {"rxcui": 2670, "term_name": "cocaine", "canonical_name": "cocaine", "category": "illicit_stimulant"},
-    {"rxcui": 2670, "term_name": "cocaina", "canonical_name": "cocaine", "category": "illicit_stimulant"},
-    {"rxcui": 2670, "term_name": "cocaína", "canonical_name": "cocaine", "category": "illicit_stimulant"},
-    # Fentanyl (RxCUI 4337)
-    {"rxcui": 4337, "term_name": "fentanyl", "canonical_name": "fentanyl", "category": "potent_opioid"},
-    {"rxcui": 4337, "term_name": "fentanilo", "canonical_name": "fentanyl", "category": "potent_opioid"},
-    {"rxcui": 4337, "term_name": "durogesic", "canonical_name": "fentanyl", "category": "potent_opioid"},
-]
+DEFAULT_DB_PATH = str(BASE_DIR / "Base_de_datos_ficticia" / "clinical_audit.duckdb")
 
 
 class ClinicalAuditStore:
     """
     Embedded analytical audit store powered by DuckDB.
-    Persists clinical sessions, telemetry, and dynamically loads patients from Base_de_datos_ficticia/pacientes.csv.
+    Persists clinical sessions, FSM state checkpoints, telemetry spans, and CSV patient records.
     """
 
-    def __init__(self, db_path: str = ":memory:") -> None:
+    def __init__(self, db_path: str = DEFAULT_DB_PATH) -> None:
         try:
             self._conn = duckdb.connect(db_path)
             self._initialize_schema()
             self._load_patients_from_csv()
-            self._seed_rxnorm_concepts()
         except Exception as exc:
             raise StorageError(f"Failed to initialize DuckDB storage: {exc}") from exc
 
     def _initialize_schema(self) -> None:
-        """Create relational tables and analytical views."""
+        """Create relational tables and analytical OLAP views."""
         self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS clinical_sessions (
@@ -108,6 +44,14 @@ class ClinicalAuditStore:
                 fsm_final_state VARCHAR NOT NULL,
                 processing_time_ms DOUBLE NOT NULL,
                 created_at VARCHAR NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS fsm_checkpoints (
+                session_id VARCHAR PRIMARY KEY,
+                current_state VARCHAR NOT NULL,
+                step_count INTEGER NOT NULL,
+                checkpoint_json TEXT NOT NULL,
+                updated_at VARCHAR NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS medication_spans (
@@ -130,13 +74,6 @@ class ClinicalAuditStore:
                 checked_at VARCHAR NOT NULL
             );
 
-            CREATE TABLE IF NOT EXISTS rxnorm_concepts (
-                term_name VARCHAR PRIMARY KEY,
-                rxcui INTEGER NOT NULL,
-                canonical_name VARCHAR NOT NULL,
-                category VARCHAR NOT NULL
-            );
-
             CREATE OR REPLACE VIEW v_safety_performance AS
             SELECT
                 tool_name,
@@ -150,16 +87,15 @@ class ClinicalAuditStore:
         )
 
     def _load_patients_from_csv(self) -> None:
-        """Load or reload patient table directly from Base_de_datos_ficticia/pacientes.csv."""
+        """Load patient table directly from Base_de_datos_ficticia/pacientes.csv."""
         if not PATIENTS_CSV.exists():
             raise StorageError(f"Patient database file not found: {PATIENTS_CSV}")
 
-        # DuckDB creates the table directly from the CSV file
         csv_path_escaped = str(PATIENTS_CSV).replace("\\", "/")
         self._conn.execute(
             f"""
             CREATE OR REPLACE TABLE patients AS
-            SELECT 
+            SELECT
                 TRIM(rut) AS rut,
                 TRIM(nombre) AS nombre,
                 CAST(edad AS INTEGER) AS edad,
@@ -171,27 +107,10 @@ class ClinicalAuditStore:
             """
         )
 
-    def _seed_rxnorm_concepts(self) -> None:
-        """Populate local RxNorm concepts."""
-        for item in RXNORM_SEED_CONCEPTS:
-            self._conn.execute(
-                """
-                INSERT OR IGNORE INTO rxnorm_concepts (
-                    term_name, rxcui, canonical_name, category
-                ) VALUES (?, ?, ?, ?);
-                """,
-                [
-                    item["term_name"].lower().strip(),
-                    item["rxcui"],
-                    item["canonical_name"].lower().strip(),
-                    item["category"],
-                ],
-            )
-
     def _format_patient_row(self, row: tuple) -> dict[str, Any]:
         """Convert raw DuckDB row into structured clinical dictionary."""
         def split_entries(val: str) -> list[str]:
-            if not val or val.lower() == "ninguna" or val.lower() == "ninguno":
+            if not val or val.lower() in ("ninguna", "ninguno", "ninguna conocida"):
                 return []
             return [s.strip() for s in val.split(";") if s.strip()]
 
@@ -206,7 +125,7 @@ class ClinicalAuditStore:
         }
 
     def get_patient(self, rut: str) -> dict[str, Any] | None:
-        """Fetch patient clinical profile by Chilean RUT directly from the external table."""
+        """Fetch patient clinical profile by Chilean RUT."""
         clean_rut = rut.strip().upper()
         cursor = self._conn.execute(
             """
@@ -217,38 +136,43 @@ class ClinicalAuditStore:
             [clean_rut],
         )
         row = cursor.fetchone()
-        if not row:
-            return None
-        return self._format_patient_row(row)
+        return self._format_patient_row(row) if row else None
 
     def list_patients(self) -> list[dict[str, Any]]:
         """List all patients from the CSV database."""
         cursor = self._conn.execute(
             "SELECT rut, nombre, edad, ciudad, enfermedades_cronicas, alergias, farmacos_actuales FROM patients ORDER BY nombre;"
         )
-        rows = cursor.fetchall()
-        return [self._format_patient_row(r) for r in rows]
+        return [self._format_patient_row(r) for r in cursor.fetchall()]
 
-    def resolve_rxnorm(self, raw_term: str) -> dict[str, Any] | None:
-        """Sub-millisecond local resolution of clinical term to RxNorm concept."""
-        clean_term = raw_term.lower().strip()
+    def save_checkpoint(self, session_id: str, checkpoint: dict[str, Any]) -> None:
+        """Persist or update an FSM state checkpoint in DuckDB."""
+        try:
+            self._conn.execute(
+                """
+                INSERT OR REPLACE INTO fsm_checkpoints (
+                    session_id, current_state, step_count, checkpoint_json, updated_at
+                ) VALUES (?, ?, ?, ?, ?);
+                """,
+                [
+                    session_id,
+                    str(checkpoint["current_state"]),
+                    int(checkpoint["step_count"]),
+                    json.dumps(checkpoint),
+                    datetime.now(timezone.utc).isoformat(),
+                ],
+            )
+        except Exception as exc:
+            raise StorageError(f"Failed to persist FSM checkpoint: {exc}") from exc
+
+    def load_checkpoint(self, session_id: str) -> dict[str, Any] | None:
+        """Load a persisted FSM checkpoint by session_id."""
         cursor = self._conn.execute(
-            """
-            SELECT rxcui, canonical_name, category
-            FROM rxnorm_concepts
-            WHERE term_name = ?
-            LIMIT 1;
-            """,
-            [clean_term],
+            "SELECT checkpoint_json FROM fsm_checkpoints WHERE session_id = ?;",
+            [session_id],
         )
         row = cursor.fetchone()
-        if not row:
-            return None
-        return {
-            "rxcui": row[0],
-            "canonical_name": row[1],
-            "category": row[2],
-        }
+        return json.loads(row[0]) if row else None
 
     def write_session(self, record: PatientAuditRecord) -> None:
         """Persist a finalized patient audit record."""
@@ -296,7 +220,7 @@ class ClinicalAuditStore:
                     medication.dose_mg,
                     medication.route,
                     extraction_latency_ms,
-                    datetime.now(UTC).isoformat(),
+                    datetime.now(timezone.utc).isoformat(),
                 ],
             )
         except Exception as exc:
@@ -327,7 +251,7 @@ class ClinicalAuditStore:
                     result,
                     latency_ms,
                     alert_description,
-                    datetime.now(UTC).isoformat(),
+                    datetime.now(timezone.utc).isoformat(),
                 ],
             )
         except Exception as exc:
@@ -347,7 +271,6 @@ class ClinicalAuditStore:
         row = cursor.fetchone()
         if not row:
             return None
-
         columns = [desc[0] for desc in cursor.description]
         return dict(zip(columns, row))
 

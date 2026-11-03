@@ -1,0 +1,5 @@
+{
+  "name": "Sistema Clínico — Ficha de Paciente y Auditoría",
+  "description": "Sistema clínico de ficha electrónica de pacientes y auditoría farmacológica de prescripciones.",
+  "requestFramePermissions": []
+}
