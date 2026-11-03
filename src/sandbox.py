@@ -29,6 +29,29 @@ BLOCKED_NAMES = frozenset(
     }
 )
 
+# Canonical substance and bilingual synonym mapping
+SYNONYM_MAP: dict[str, str] = {
+    "metformina": "metformin",
+    "contrast": "radiocontrast",
+    "contraste": "radiocontrast",
+    "medio de contraste": "radiocontrast",
+    "warfarina": "warfarin",
+    "aspirina": "aspirin",
+    "ibuprofeno": "ibuprofen",
+    "paracetamol": "paracetamol",
+    "acetaminofen": "paracetamol",
+    "acetaminofén": "paracetamol",
+    "tylenol": "paracetamol",
+    "tramadol": "tramadol",
+    "cocaina": "cocaine",
+    "cocaína": "cocaine",
+    "fentanilo": "fentanyl",
+    "metotrexato": "methotrexate",
+    "aine": "nsaid",
+    "aines": "nsaid",
+    "isrs": "ssri",
+}
+
 # Known critical clinical interactions (active substance pairs -> description)
 CRITICAL_INTERACTIONS: dict[frozenset[str], str] = {
     frozenset({"metformin", "radiocontrast"}): (
@@ -110,8 +133,9 @@ def validate_dose_expression(expression: str) -> float:
 def check_drug_interactions(medications: list[str]) -> list[DrugInteractionAlert]:
     """
     Cross-reference extracted medications against known critical interactions.
+    Applies canonical normalization so bilingual synonyms are accurately matched.
     """
-    normalized = [med.lower().strip() for med in medications]
+    normalized = [SYNONYM_MAP.get(med.lower().strip(), med.lower().strip()) for med in medications]
     alerts: list[DrugInteractionAlert] = []
 
     for i, drug_a in enumerate(normalized):
@@ -134,26 +158,42 @@ def check_drug_interactions(medications: list[str]) -> list[DrugInteractionAlert
 def check_dosage_safety(medications: list[ExtractedMedication]) -> list[DrugInteractionAlert]:
     """
     Evaluate prescribed dosages against maximum safe pharmacological ceilings.
-    Flags lethal overdoses and toxic quantities before dispensing.
+    Flags lethal overdoses, toxic quantities, and prohibited illicit substances.
     """
     overdose_alerts: list[DrugInteractionAlert] = []
 
     for med in medications:
-        if med.dose_mg is None:
+        canonical_name = SYNONYM_MAP.get(med.name.lower().strip(), med.name.lower().strip())
+        max_limit = MAX_SAFE_DAILY_DOSES_MG.get(canonical_name)
+
+        # Prohibited illicit substances (e.g., cocaine) have zero clinical allowance
+        if max_limit == 0.0:
+            overdose_alerts.append(
+                DrugInteractionAlert(
+                    drug_a=canonical_name,
+                    drug_b="PROHIBITED_SUBSTANCE",
+                    severity="CRITICAL",
+                    description=(
+                        f"PROHIBITED ILLICIT SUBSTANCE: {canonical_name.upper()} has zero therapeutic "
+                        "threshold and cannot be dispensed under any clinical protocol."
+                    ),
+                    cie10_codes=["T40.5", "T40.9"],
+                )
+            )
             continue
 
-        drug_name = med.name.lower().strip()
-        max_limit = MAX_SAFE_DAILY_DOSES_MG.get(drug_name)
+        if med.dose_mg is None:
+            continue
 
         if max_limit is not None and med.dose_mg > max_limit:
             ratio = (med.dose_mg / max_limit) * 100.0 if max_limit > 0 else 0
             overdose_alerts.append(
                 DrugInteractionAlert(
-                    drug_a=drug_name,
+                    drug_a=canonical_name,
                     drug_b="LETHAL_OVERDOSE",
                     severity="CRITICAL",
                     description=(
-                        f"FATAL OVERDOSE DETECTED: Prescribed dose of {med.name.upper()} "
+                        f"FATAL OVERDOSE DETECTED: Prescribed dose of {canonical_name.upper()} "
                         f"({med.dose_mg:.1f}mg) exceeds the maximum safe ceiling of {max_limit:.1f}mg "
                         f"({ratio:.0f}% of ceiling). Imminent risk of severe toxicity, organ collapse, or death."
                     ),
