@@ -99,3 +99,24 @@ async def test_medication_extraction_normalization() -> None:
     metformin_med = next(m for m in meds if m.name == "metformin")
     assert metformin_med.dose_mg == 850.0
     assert metformin_med.route == "oral"
+
+
+@pytest.mark.asyncio
+async def test_fentanyl_overdose_intercepted_in_orchestrator(store: ClinicalAuditStore) -> None:
+    """Prescription with 200g fentanyl must be intercepted and force FSM to FAILED."""
+    orchestrator = ClinicalOrchestrator(store=store)
+    note = ClinicalNote(
+        note_id="NOTE-FENTANYL-200G",
+        patient_ref="12.345.678-5",
+        raw_text="fentanilo inyectable a la vena 200 gramos",
+        recorded_at=datetime.now(UTC),
+    )
+
+    record = await orchestrator.execute_audit(note=note)
+
+    assert record.safety_status == ClinicalSafetyStatus.CRITICAL_BLOCK
+    assert record.fsm_final_state == EngineState.FAILED
+    assert len(record.alerts) >= 1
+    alert = record.alerts[0]
+    assert alert.severity == "CRITICAL"
+    assert "fentanyl" in record.medications_extracted

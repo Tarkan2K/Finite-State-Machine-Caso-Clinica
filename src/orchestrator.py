@@ -19,6 +19,7 @@ from src.exceptions import ClinicalSafetyViolationError, EngineError
 from src.fsm import AgentFSM
 from src.sandbox import (
     check_allergy_contraindications,
+    check_condition_contraindications,
     check_dosage_safety,
     check_drug_interactions,
 )
@@ -51,11 +52,11 @@ async def extract_medications(
         "(including diagnostic imaging contrast agents like CT contrast, contrast study, or radiocontrast dye). "
         "For each substance, identify: "
         "- name: active substance or agent in lowercase (e.g., 'metformin', 'radiocontrast', 'paracetamol', 'tramadol', 'aspirin', 'cocaine', 'fentanyl'). "
-        "- dose_mg: exact quantity in MILLIGRAMS if stated, otherwise null. "
+        "- dose_mg: quantity strictly converted to MILLIGRAMS (float). CRITICAL: If expressed in grams (g, gr, gramos), multiply by 1000 (e.g. 200 gramos = 200000.0, 1g = 1000.0). If in micrograms (mcg), divide by 1000 (e.g. 100mcg = 0.1). If no dose stated, null. "
         "- route: 'oral', 'injected', 'IV', or null. "
         f"Physician Note: \"{raw_text}\"\n"
         "Return pure JSON with a single list under 'medications'. Example: "
-        "{\"medications\": [{\"name\": \"metformin\", \"dose_mg\": 850, \"route\": \"oral\"}, {\"name\": \"radiocontrast\", \"dose_mg\": null, \"route\": \"IV\"}]}\n"
+        "{\"medications\": [{\"name\": \"metformin\", \"dose_mg\": 850.0, \"route\": \"oral\"}, {\"name\": \"radiocontrast\", \"dose_mg\": null, \"route\": \"IV\"}]}\n"
         "JSON:"
     )
 
@@ -260,10 +261,14 @@ class ClinicalOrchestrator:
             allergy_alerts = check_allergy_contraindications(
                 patient.get("alergias", []), new_names
             )
-            # 3. Lethal posology overdose ceilings
+            # 3. Patient chronic disease / organ damage contraindications
+            condition_alerts = check_condition_contraindications(
+                patient.get("enfermedades_cronicas", []), new_names
+            )
+            # 4. Lethal posology overdose ceilings & high-alert opioids
             dosage_alerts = check_dosage_safety(all_medications)
 
-            alerts = interaction_alerts + allergy_alerts + dosage_alerts
+            alerts = interaction_alerts + allergy_alerts + condition_alerts + dosage_alerts
             chk_latency_ms = (time.perf_counter() - chk_start) * 1000.0
 
             # Log check result telemetry to DuckDB

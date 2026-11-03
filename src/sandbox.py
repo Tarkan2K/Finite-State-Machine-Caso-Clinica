@@ -190,6 +190,73 @@ def check_allergy_contraindications(
     return alerts
 
 
+def check_condition_contraindications(
+    chronic_conditions: list[str],
+    ordered_medications: list[str],
+) -> list[DrugInteractionAlert]:
+    """
+    Cross-reference ordered substances against the patient's chronic diseases to intercept
+    organ damage (e.g. nephrotoxicity in renal failure, bronchospasm in asthma).
+    """
+    alerts: list[DrugInteractionAlert] = []
+    if not chronic_conditions:
+        return alerts
+
+    conditions_text = " ".join(chronic_conditions).lower()
+
+    for med in ordered_medications:
+        med_clean = med.lower().strip()
+
+        # Renal impairment contraindications
+        if any(k in conditions_text for k in ("renal", "riñon", "riñón", "nefropatia", "nefropatía")):
+            if med_clean == "radiocontrast":
+                alerts.append(
+                    DrugInteractionAlert(
+                        drug_a="radiocontrast",
+                        drug_b="CHRONIC_RENAL_IMPAIRMENT",
+                        severity="CRITICAL",
+                        description=(
+                            "CONTRAINDICATED IN RENAL FAILURE: Radiocontrast agents induce acute "
+                            "contrast nephropathy and tubular necrosis in patients with pre-existing "
+                            "renal impairment."
+                        ),
+                        cie10_codes=["N17.9", "N18.9"],
+                    )
+                )
+            elif med_clean in ("ibuprofen", "nsaid"):
+                alerts.append(
+                    DrugInteractionAlert(
+                        drug_a=med_clean,
+                        drug_b="CHRONIC_RENAL_IMPAIRMENT",
+                        severity="CRITICAL",
+                        description=(
+                            f"CONTRAINDICATED IN RENAL FAILURE: NSAID ({med_clean.upper()}) reduces "
+                            "renal prostaglandins, decreasing GFR and precipitating acute-on-chronic "
+                            "renal failure."
+                        ),
+                        cie10_codes=["N17.9", "N18.9"],
+                    )
+                )
+
+        # Asthma / bronchospasm contraindications
+        if any(k in conditions_text for k in ("asma", "asthma", "epoc")):
+            if med_clean in ("aspirin", "ibuprofen", "nsaid"):
+                alerts.append(
+                    DrugInteractionAlert(
+                        drug_a=med_clean,
+                        drug_b="ASTHMA_BRONCHOSPASM_RISK",
+                        severity="CRITICAL",
+                        description=(
+                            f"CONTRAINDICATED IN ASTHMA: NSAID/Aspirin ({med_clean.upper()}) inhibits COX-1, "
+                            "shunting arachidonic acid to leukotrienes and triggering severe bronchospasm (AERD)."
+                        ),
+                        cie10_codes=["J45.9", "T78.4"],
+                    )
+                )
+
+    return alerts
+
+
 def check_dosage_safety(medications: list[ExtractedMedication]) -> list[DrugInteractionAlert]:
     """
     Evaluate prescribed dosages against maximum safe pharmacological ceilings.
@@ -213,6 +280,22 @@ def check_dosage_safety(medications: list[ExtractedMedication]) -> list[DrugInte
                         "threshold and cannot be dispensed under any clinical protocol."
                     ),
                     cie10_codes=["T40.5", "T40.9"],
+                )
+            )
+            continue
+
+        # High-alert opioid safeguard: fentanyl must have an explicit safe dose (<0.2mg)
+        if canonical_name == "fentanyl" and med.dose_mg is None:
+            overdose_alerts.append(
+                DrugInteractionAlert(
+                    drug_a="fentanyl",
+                    drug_b="HIGH_ALERT_MEDICATION",
+                    severity="CRITICAL",
+                    description=(
+                        "HIGH-ALERT OPIOID HAZARD: Fentanyl posology must be strictly specified in micrograms (mcg). "
+                        "Uncalibrated or missing dosage values are intercepted to prevent fatal respiratory depression."
+                    ),
+                    cie10_codes=["T40.4"],
                 )
             )
             continue

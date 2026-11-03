@@ -6,7 +6,13 @@ Validates arithmetic safety, denylist enforcement, drug-drug contraindications, 
 import pytest
 
 from src.exceptions import ToolSecurityError
-from src.sandbox import check_dosage_safety, check_drug_interactions, validate_dose_expression
+from src.sandbox import (
+    check_allergy_contraindications,
+    check_condition_contraindications,
+    check_dosage_safety,
+    check_drug_interactions,
+    validate_dose_expression,
+)
 from src.types import ExtractedMedication
 
 # --- AST Expression Sandbox Tests ---
@@ -105,3 +111,42 @@ def test_safe_combinations_return_no_alerts() -> None:
     """Non-interacting drugs must yield an empty alert list."""
     alerts = check_drug_interactions(["Paracetamol", "Amoxicillin", "Ibuprofen"])
     assert len(alerts) == 0
+
+
+def test_lethal_fentanyl_overdose_intercepted() -> None:
+    """Fentanyl prescribed at 200 grams (200,000mg) must trigger FATAL OVERDOSE."""
+    meds = [ExtractedMedication(name="fentanyl", dose_mg=200000.0)]
+    alerts = check_dosage_safety(meds)
+    assert len(alerts) == 1
+    assert alerts[0].severity == "CRITICAL"
+    assert "FATAL OVERDOSE" in alerts[0].description
+    assert "0.2mg" in alerts[0].description
+
+
+def test_fentanyl_missing_dose_blocked() -> None:
+    """Unspecified dose for high-alert fentanyl must trigger HIGH_ALERT_MEDICATION hazard."""
+    meds = [ExtractedMedication(name="fentanyl", dose_mg=None)]
+    alerts = check_dosage_safety(meds)
+    assert len(alerts) == 1
+    assert alerts[0].severity == "CRITICAL"
+    assert "HIGH-ALERT OPIOID HAZARD" in alerts[0].description
+
+
+def test_renal_failure_condition_contraindications() -> None:
+    """Radiocontrast and NSAIDs must be blocked in patients with chronic renal impairment."""
+    alerts = check_condition_contraindications(
+        ["Insuficiencia Renal Moderada", "Diabetes Tipo 2"],
+        ["radiocontrast", "ibuprofen"],
+    )
+    assert len(alerts) == 2
+    assert all(a.severity == "CRITICAL" for a in alerts)
+    descriptions = " ".join(a.description for a in alerts)
+    assert "CONTRAINDICATED IN RENAL FAILURE" in descriptions
+
+
+def test_asthma_condition_contraindication() -> None:
+    """Aspirin in severe asthma must be blocked due to bronchospasm / AERD."""
+    alerts = check_condition_contraindications(["Asma Severa"], ["aspirin"])
+    assert len(alerts) == 1
+    assert alerts[0].severity == "CRITICAL"
+    assert "CONTRAINDICATED IN ASTHMA" in alerts[0].description
