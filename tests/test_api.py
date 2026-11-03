@@ -17,7 +17,7 @@ def test_dashboard_endpoint(client: TestClient) -> None:
     """GET / must return HTML dashboard page."""
     response = client.get("/")
     assert response.status_code == 200
-    assert "Aura Clinical" in response.text or "Hospital Intranet" in response.text
+    assert "Sistema Clínico" in response.text
 
 
 def test_execute_audit_safe_endpoint(client: TestClient) -> None:
