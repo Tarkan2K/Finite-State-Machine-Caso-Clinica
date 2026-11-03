@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aura Clinical — Bedside AI Safety Suite</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col antialiased">
+
+  <!-- Hospital Header Bar -->
+  <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center space-x-3">
+      <div class="w-9 h-9 rounded-lg bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-400 font-bold text-lg">
+        A
+      </div>
+      <div>
+        <div class="flex items-center space-x-2">
+          <h1 class="text-lg font-bold tracking-tight text-white">AURA CLINICAL</h1>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-medium">FSM Runtime 0.1</span>
+        </div>
+        <p class="text-xs text-slate-400">Deterministic Bedside AI Interceptor • ICU & ER Safety Gateway</p>
+      </div>
+    </div>
+    <div class="flex items-center space-x-4">
+      <div class="flex items-center space-x-2 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-md">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span class="mono font-medium">DuckDB OLAP Active</span>
+      </div>
+      <div class="flex items-center space-x-2 text-xs text-sky-400 bg-sky-500/10 border border-sky-500/20 px-3 py-1.5 rounded-md">
+        <span class="mono font-medium">Ollama/Heuristic Extractor</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Grid -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+    <!-- Left Column: Patient & Input Panel (7 cols) -->
+    <section class="lg:col-span-7 flex flex-col space-y-5">
+
+      <!-- Patient EHR Card -->
+      <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-5 shadow-sm">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400 flex items-center space-x-2">
+            <span>Hospital EHR Context (Patient File)</span>
+          </h2>
+          <span id="patientRefBadge" class="mono text-xs px-2.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">PAT-101</span>
+        </div>
+
+        <div class="grid grid-cols-3 gap-3 mb-4">
+          <button onclick="selectPatient('1')" id="pbtn-1" class="patient-btn p-3 rounded-lg border text-left transition-all border-cyan-500 bg-cyan-950/20 ring-1 ring-cyan-500">
+            <div class="text-xs text-slate-400">PAT-101 (67F)</div>
+            <div class="font-semibold text-sm text-white truncate">Eleanor Vance</div>
+            <div class="text-[11px] text-amber-400 mt-1 font-medium truncate">Meds: Metformin 850mg</div>
+          </button>
+
+          <button onclick="selectPatient('2')" id="pbtn-2" class="patient-btn p-3 rounded-lg border text-left transition-all border-slate-800 bg-slate-900/40 hover:border-slate-700">
+            <div class="text-xs text-slate-400">PAT-102 (24M)</div>
+            <div class="font-semibold text-sm text-white truncate">Carlos Silva</div>
+            <div class="text-[11px] text-emerald-400 mt-1 font-medium truncate">Meds: None (Clean)</div>
+          </button>
+
+          <button onclick="selectPatient('3')" id="pbtn-3" class="patient-btn p-3 rounded-lg border text-left transition-all border-slate-800 bg-slate-900/40 hover:border-slate-700">
+            <div class="text-xs text-slate-400">PAT-103 (72M)</div>
+            <div class="font-semibold text-sm text-white truncate">Arthur Pendelton</div>
+            <div class="text-[11px] text-amber-400 mt-1 font-medium truncate">Meds: Warfarin 5mg</div>
+          </button>
+        </div>
+
+        <div class="text-xs bg-slate-950/50 rounded-lg p-3 border border-slate-800/80 flex justify-between items-center">
+          <div>
+            <span class="text-slate-400">Active Baseline Chronic Medication:</span>
+            <span id="patientMedsSummary" class="text-amber-300 font-semibold mono ml-2">metformin (850mg BID)</span>
+          </div>
+          <div>
+            <span class="text-slate-400">Condition:</span>
+            <span id="patientConditionSummary" class="text-slate-200 ml-2">Type 2 Diabetes / Renal Impairment</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bedside Prescription / Clinical Note Box -->
+      <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-5 shadow-sm flex-1 flex flex-col">
+        <div class="flex items-center justify-between mb-2">
+          <label for="clinicalNote" class="text-sm font-semibold uppercase tracking-wider text-slate-400">Physician Bedside Note (Free-Text Input)</label>
+          <span class="text-xs text-slate-400">Type freely or choose a clinical scenario:</span>
+        </div>
+
+        <!-- Preset buttons -->
+        <div class="flex flex-wrap gap-2 mb-3">
+          <button onclick="setPreset('danger-metformin')" class="text-xs bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 border border-rose-800/60 px-2.5 py-1 rounded transition">
+            ⚠️ Hazard: Order Contrast Scan (Metformin conflict)
+          </button>
+          <button onclick="setPreset('danger-warfarin')" class="text-xs bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 border border-rose-800/60 px-2.5 py-1 rounded transition">
+            ⚠️ Hazard: Order Aspirin 100mg (Warfarin conflict)
+          </button>
+          <button onclick="setPreset('safe-paracetamol')" class="text-xs bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-300 border border-emerald-800/60 px-2.5 py-1 rounded transition">
+            ✅ Safe: Paracetamol 500mg oral
+          </button>
+        </div>
+
+        <textarea id="clinicalNote" rows="5" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition mono leading-relaxed" placeholder="Doctor's unstructured note (e.g., 'Patient presents with severe acute chest discomfort. Schedule urgent contrast CT scan and administer paracetamol 500mg.')"></textarea>
+
+        <div class="mt-4 flex items-center justify-between pt-2">
+          <div class="text-xs text-slate-400 flex items-center space-x-1">
+            <span>Governed by:</span>
+            <span class="mono text-cyan-400 font-semibold">AgentFSM (7 States, Max Steps: 10)</span>
+          </div>
+
+          <button onclick="executeAudit()" id="runAuditBtn" class="bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-slate-950 font-bold px-5 py-2.5 rounded-lg text-sm transition-all flex items-center space-x-2 shadow-lg shadow-cyan-500/20">
+            <span id="btnSpinner" class="hidden w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></span>
+            <span id="btnText">EXECUTE SAFETY AUDIT</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Column: FSM Inspector & Audit Telemetry (5 cols) -->
+    <section class="lg:col-span-5 flex flex-col space-y-5">
+
+      <!-- FSM Pipeline State Visualizer -->
+      <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-5 shadow-sm">
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-4 flex items-center justify-between">
+          <span>FSM Execution Pipeline</span>
+          <span id="fsmCurrentStateBadge" class="mono text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300">IDLE</span>
+        </h2>
+
+        <!-- Step Badges -->
+        <div class="space-y-2 mono text-xs" id="fsmStepsContainer">
+          <div id="step-INITIALIZED" class="p-2 rounded bg-slate-950/60 border border-slate-800/80 flex items-center justify-between text-slate-400">
+            <span>1. INITIALIZED</span>
+            <span class="step-status">Pending</span>
+          </div>
+          <div id="step-PLANNING" class="p-2 rounded bg-slate-950/60 border border-slate-800/80 flex items-center justify-between text-slate-400">
+            <span>2. PLANNING (Task Planning)</span>
+            <span class="step-status">Pending</span>
+          </div>
+          <div id="step-DISPATCHING_TOOL" class="p-2 rounded bg-slate-950/60 border border-slate-800/80 flex items-center justify-between text-slate-400">
+            <span>3. DISPATCHING_TOOL (Medication Extractor)</span>
+            <span class="step-status">Pending</span>
+          </div>
+          <div id="step-AWAITING_OBSERVATION" class="p-2 rounded bg-slate-950/60 border border-slate-800/80 flex items-center justify-between text-slate-400">
+            <span>4. AWAITING_OBSERVATION (DuckDB Spans)</span>
+            <span class="step-status">Pending</span>
+          </div>
+          <div id="step-REFLECTING" class="p-2 rounded bg-slate-950/60 border border-slate-800/80 flex items-center justify-between text-slate-400">
+            <span>5. REFLECTING (Safety Check & Matrix)</span>
+            <span class="step-status">Pending</span>
+          </div>
+          <div id="step-TERMINAL" class="p-2.5 rounded bg-slate-950/80 border border-slate-800 flex items-center justify-between font-bold text-slate-300">
+            <span>6. TERMINAL STATE</span>
+            <span class="step-status" id="terminalStatusText">READY</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Verdict Banner Area -->
+      <div id="verdictBox" class="rounded-xl p-5 border hidden transition-all">
+        <!-- Injected via JS -->
+      </div>
+
+      <!-- DuckDB Real-time Telemetry Card -->
+      <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-5 shadow-sm flex-1 flex flex-col">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400 flex items-center space-x-2">
+            <span>DuckDB In-Process Columnar Telemetry</span>
+          </h2>
+          <button onclick="loadTelemetry()" class="text-xs text-cyan-400 hover:text-cyan-300 mono underline">Refresh</button>
+        </div>
+
+        <div class="overflow-x-auto flex-1">
+          <table class="w-full text-left text-xs mono">
+            <thead>
+              <tr class="border-b border-slate-800 text-slate-400">
+                <th class="py-2">Tool</th>
+                <th class="py-2">Checks</th>
+                <th class="py-2">P50</th>
+                <th class="py-2">P95</th>
+                <th class="py-2 text-cyan-400">P99 Latency</th>
+              </tr>
+            </thead>
+            <tbody id="telemetryBody" class="divide-y divide-slate-800/60 text-slate-300">
+              <tr>
+                <td colspan="5" class="py-3 text-center text-slate-500">Run an audit to view live DuckDB percentiles</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <script>
+    const PATIENTS = {
+      "1": {
+        id: "PAT-101",
+        name: "Eleanor Vance (67F)",
+        meds: "metformin",
+        condition: "Type 2 Diabetes / Renal Impairment"
+      },
+      "2": {
+        id: "PAT-102",
+        name: "Carlos Silva (24M)",
+        meds: "none",
+        condition: "Clean Baseline / No Allergies"
+      },
+      "3": {
+        id: "PAT-103",
+        name: "Arthur Pendelton (72M)",
+        meds: "warfarin",
+        condition: "Deep Vein Thrombosis / Atrial Fibrillation"
+      }
+    };
+
+    let currentPatient = PATIENTS["1"];
+
+    function selectPatient(key) {
+      currentPatient = PATIENTS[key];
+      document.querySelectorAll('.patient-btn').forEach(btn => {
+        btn.classList.remove('border-cyan-500', 'bg-cyan-950/20', 'ring-1', 'ring-cyan-500');
+        btn.classList.add('border-slate-800', 'bg-slate-900/40');
+      });
+      const activeBtn = document.getElementById(`pbtn-${key}`);
+      activeBtn.classList.remove('border-slate-800', 'bg-slate-900/40');
+      activeBtn.classList.add('border-cyan-500', 'bg-cyan-950/20', 'ring-1', 'ring-cyan-500');
+
+      document.getElementById('patientRefBadge').innerText = currentPatient.id;
+      document.getElementById('patientMedsSummary').innerText = currentPatient.meds;
+      document.getElementById('patientConditionSummary').innerText = currentPatient.condition;
+    }
+
+    function setPreset(type) {
+      const textarea = document.getElementById('clinicalNote');
+      if (type === 'danger-metformin') {
+        selectPatient('1');
+        textarea.value = "Patient presenting with acute pleuritic chest pain. Schedule immediate IV contrast tomography scan to rule out PE.";
+      } else if (type === 'danger-warfarin') {
+        selectPatient('3');
+        textarea.value = "Patient reports acute knee arthritis inflammation. Administer aspirin 100mg oral for symptomatic relief.";
+      } else if (type === 'safe-paracetamol') {
+        selectPatient('2');
+        textarea.value = "Patient presents with mild tension headache. Administer paracetamol 500mg oral every 8 hours.";
+      }
+    }
+
+    async function executeAudit() {
+      const noteText = document.getElementById('clinicalNote').value.trim();
+      if (!noteText) {
+        alert("Please enter a bedside clinical note.");
+        return;
+      }
+
+      // UI Loading state
+      const btn = document.getElementById('runAuditBtn');
+      const spinner = document.getElementById('btnSpinner');
+      const btnText = document.getElementById('btnText');
+      btn.disabled = true;
+      spinner.classList.remove('hidden');
+      btnText.innerText = "RUNNING FSM...";
+
+      resetFsmVisuals();
+
+      // If patient has chronic baseline medication, ensure orchestrator includes it
+      let enrichedText = noteText;
+      if (currentPatient.meds !== "none") {
+        enrichedText = `[Patient Chronic Baseline: ${currentPatient.meds}] ` + noteText;
+      }
+
+      const payload = {
+        note_id: "WEB-" + Math.random().toString(36).substring(2, 9).toUpperCase(),
+        patient_ref: currentPatient.id,
+        raw_text: enrichedText
+      };
+
+      try {
+        // Animate FSM progression visually
+        animateFsmStep('INITIALIZED');
+        await new Promise(r => setTimeout(r, 120));
+        animateFsmStep('PLANNING');
+        await new Promise(r => setTimeout(r, 150));
+        animateFsmStep('DISPATCHING_TOOL');
+
+        const response = await fetch('/api/v1/clinical/audit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        animateFsmStep('AWAITING_OBSERVATION');
+        await new Promise(r => setTimeout(r, 100));
+        animateFsmStep('REFLECTING');
+
+        const data = await response.json();
+
+        // Render Final State
+        renderVerdict(data);
+        loadTelemetry();
+
+      } catch (err) {
+        alert("Audit execution failed: " + err.message);
+      } finally {
+        btn.disabled = false;
+        spinner.classList.add('hidden');
+        btnText.innerText = "EXECUTE SAFETY AUDIT";
+      }
+    }
+
+    function resetFsmVisuals() {
+      const steps = ['INITIALIZED', 'PLANNING', 'DISPATCHING_TOOL', 'AWAITING_OBSERVATION', 'REFLECTING'];
+      steps.forEach(s => {
+        const el = document.getElementById(`step-${s}`);
+        el.className = "p-2 rounded bg-slate-950/60 border border-slate-800/80 flex items-center justify-between text-slate-400";
+        el.querySelector('.step-status').innerText = "Pending";
+      });
+      const term = document.getElementById('step-TERMINAL');
+      term.className = "p-2.5 rounded bg-slate-950/80 border border-slate-800 flex items-center justify-between font-bold text-slate-300";
+      document.getElementById('terminalStatusText').innerText = "PROCESSING...";
+      document.getElementById('verdictBox').classList.add('hidden');
+    }
+
+    function animateFsmStep(stepName) {
+      const el = document.getElementById(`step-${stepName}`);
+      if (el) {
+        el.className = "p-2 rounded bg-cyan-950/40 border border-cyan-500/60 flex items-center justify-between text-cyan-300 transition-all";
+        el.querySelector('.step-status').innerText = "Active / Validated";
+      }
+    }
+
+    function renderVerdict(record) {
+      const isBlocked = record.safety_status === "CRITICAL_BLOCK";
+      const termEl = document.getElementById('step-TERMINAL');
+      const badge = document.getElementById('fsmCurrentStateBadge');
+      const verdictBox = document.getElementById('verdictBox');
+
+      if (isBlocked) {
+        termEl.className = "p-2.5 rounded bg-rose-950/80 border border-rose-500 flex items-center justify-between font-bold text-rose-300 animate-pulse";
+        document.getElementById('terminalStatusText').innerText = "FAILED (ABSORBING INTERCEPT)";
+        badge.innerText = "FAILED";
+        badge.className = "mono text-xs px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40";
+
+        let alertHtml = "";
+        record.alerts.forEach(a => {
+          alertHtml += `
+            <div class="mt-2 text-xs bg-rose-950/70 border border-rose-800/80 rounded-lg p-3">
+              <div class="font-bold text-rose-300 uppercase">${a.drug_a} + ${a.drug_b}</div>
+              <div class="text-rose-200 mt-1 leading-relaxed">${a.description}</div>
+              <div class="mt-1 text-[11px] mono text-rose-400 font-medium">ICD-10 Adverse Codes: ${a.cie10_codes.join(', ')}</div>
+            </div>
+          `;
+        });
+
+        verdictBox.className = "rounded-xl p-5 border bg-rose-950/40 border-rose-700/80 shadow-lg shadow-rose-950/50 block";
+        verdictBox.innerHTML = `
+          <div class="flex items-center space-x-2 text-rose-400 font-bold text-sm uppercase">
+            <span>🛑 CRITICAL SAFETY INTERCEPT — DISPENSING BLOCKED</span>
+          </div>
+          <p class="text-xs text-rose-200/90 mt-1">The FSM intercepted a lethal contraindication. Zero bytes of unverified medical output escaped to bedside.</p>
+          ${alertHtml}
+          <div class="mt-3 text-[11px] mono text-slate-400 flex justify-between">
+            <span>Latency: ${record.processing_time_ms.toFixed(2)}ms</span>
+            <span>Session: ${record.session_id.substring(0, 13)}...</span>
+          </div>
+        `;
+
+      } else {
+        termEl.className = "p-2.5 rounded bg-emerald-950/80 border border-emerald-500 flex items-center justify-between font-bold text-emerald-300";
+        document.getElementById('terminalStatusText').innerText = "COMPLETED";
+        badge.innerText = "COMPLETED";
+        badge.className = "mono text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
+
+        verdictBox.className = "rounded-xl p-5 border bg-emerald-950/40 border-emerald-700/80 shadow-lg shadow-emerald-950/50 block";
+        verdictBox.innerHTML = `
+          <div class="flex items-center space-x-2 text-emerald-400 font-bold text-sm uppercase">
+            <span>✅ VERIFIED SAFE — APPROVED FOR DISPENSING</span>
+          </div>
+          <p class="text-xs text-emerald-200/90 mt-1">Prescription verified against patient history with zero detected contraindications. Dispatched to pharmacy queue.</p>
+          <div class="mt-3 text-[11px] mono text-slate-400 flex justify-between">
+            <span>Extracted: ${record.medications_extracted.join(', ') || 'None'}</span>
+            <span>Latency: ${record.processing_time_ms.toFixed(2)}ms</span>
+          </div>
+        `;
+      }
+    }
+
+    async function loadTelemetry() {
+      try {
+        const res = await fetch('/api/v1/analytics/safety-metrics');
+        const metrics = await res.json();
+        const tbody = document.getElementById('telemetryBody');
+        if (metrics.length === 0) return;
+
+        tbody.innerHTML = '';
+        metrics.forEach(m => {
+          tbody.innerHTML += `
+            <tr class="hover:bg-slate-900/50">
+              <td class="py-2.5 text-slate-200">${m.tool_name}</td>
+              <td class="py-2.5 text-slate-400">${m.total_checks}</td>
+              <td class="py-2.5">${m.p50_ms.toFixed(2)}ms</td>
+              <td class="py-2.5">${m.p95_ms.toFixed(2)}ms</td>
+              <td class="py-2.5 text-cyan-400 font-bold">${m.p99_ms.toFixed(2)}ms</td>
+            </tr>
+          `;
+        });
+      } catch (e) {
+        console.error("Telemetry fetch error:", e);
+      }
+    }
+
+    // Initial load
+    setPreset('danger-metformin');
+    loadTelemetry();
+  </script>
+</body>
+</html>

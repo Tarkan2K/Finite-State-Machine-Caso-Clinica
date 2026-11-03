@@ -4,10 +4,13 @@ Coordinates FSM lifecycle, tool execution, safety sandboxing, and DuckDB telemet
 """
 
 import asyncio
+import os
 import re
 import time
 import uuid
 from datetime import UTC, datetime
+
+import httpx
 
 from src.exceptions import ClinicalSafetyViolationError, EngineError
 from src.fsm import AgentFSM
@@ -24,7 +27,7 @@ from src.types import (
 
 # Known active substances regex for deterministic local extraction
 KNOWN_DRUGS_PATTERN = re.compile(
-    r"\b(metformin|radiocontrast|contrast|warfarin|aspirin|tramadol|ssri|methotrexate|nsaid)\b",
+    r"\b(metformin|radiocontrast|contrast|warfarin|aspirin|tramadol|ssri|methotrexate|nsaid|paracetamol|ibuprofen)\b",
     re.IGNORECASE,
 )
 DOSE_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*(mg|g|mcg|ml)", re.IGNORECASE)
@@ -33,12 +36,34 @@ DOSE_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*(mg|g|mcg|ml)", re.IGNORECASE)
 async def extract_medications(raw_text: str) -> list[ExtractedMedication]:
     """
     Extract medication entities from clinical text.
-    In production, this delegates to Ollama or a frontier LLM endpoint.
-    Includes a deterministic fallback regex extractor for zero-latency offline execution.
+    If OLLAMA_HOST is set, queries local Ollama; otherwise uses fast regex extractor.
     """
-    # Simulate non-blocking extraction (I/O bound)
+    # Context switch for async event loop
     await asyncio.sleep(0.005)
 
+    ollama_host = os.environ.get("OLLAMA_HOST")
+    if ollama_host:
+        try:
+            prompt = (
+                f"Extract all medications as JSON list: [{{\"name\": \"drug\"}}]. Text: \"{raw_text}\""
+            )
+            async with httpx.AsyncClient(timeout=1.0) as client:
+                res = await client.post(
+                    f"{ollama_host}/api/generate",
+                    json={"model": "llama3.2", "prompt": prompt, "stream": False, "format": "json"},
+                )
+                if res.status_code == 200:
+                    import json
+                    parsed = json.loads(res.json().get("response", "[]"))
+                    if isinstance(parsed, list) and parsed:
+                        return [
+                            ExtractedMedication(name=str(p["name"]).lower().strip())
+                            for p in parsed if "name" in p
+                        ]
+        except (httpx.RequestError, KeyError):
+            pass
+
+    # Deterministic high-speed extraction
     matches = KNOWN_DRUGS_PATTERN.findall(raw_text)
     dose_match = DOSE_PATTERN.search(raw_text)
 
@@ -86,14 +111,6 @@ class ClinicalOrchestrator:
     ) -> PatientAuditRecord:
         """
         Execute an end-to-end clinical safety audit for a submitted clinical note.
-
-        Args:
-            note: Input ClinicalNote model.
-            max_steps: Maximum FSM execution steps allowed.
-            timeout_seconds: Hard timeout threshold for entire execution.
-
-        Returns:
-            Immutable PatientAuditRecord summarizing the audit outcome.
         """
         try:
             return await asyncio.wait_for(

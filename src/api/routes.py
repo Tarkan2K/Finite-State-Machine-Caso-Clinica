@@ -1,12 +1,15 @@
 """
 FastAPI REST API routes for Aura Clinical runtime engine.
 Exposes clinical audit execution, session audit trail retrieval, and OLAP metrics.
+Serves interactive clinical bedside web dashboard at root path.
 """
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
+from fastapi.responses import HTMLResponse
 
 from src.exceptions import EngineError, StorageError
 from src.orchestrator import ClinicalOrchestrator
@@ -15,6 +18,7 @@ from src.types import ClinicalNote, PatientAuditRecord
 
 # Global store reference for standalone app execution
 _store: ClinicalAuditStore | None = None
+STATIC_INDEX = Path(__file__).resolve().parent / "static" / "index.html"
 
 
 def get_store() -> ClinicalAuditStore:
@@ -124,6 +128,14 @@ app = FastAPI(
 )
 
 app.include_router(router)
+
+
+@app.get("/", response_class=HTMLResponse, tags=["Dashboard"])
+async def serve_dashboard() -> HTMLResponse:
+    """Serve the interactive Bedside Clinical Safety Web Portal."""
+    if STATIC_INDEX.exists():
+        return HTMLResponse(content=STATIC_INDEX.read_text(encoding="utf-8"))
+    return HTMLResponse("<h1>Aura Clinical Safety API is running.</h1>")
 
 
 @app.get("/health", tags=["Monitoring"])

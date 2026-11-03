@@ -13,6 +13,13 @@ def test_health_check_endpoint(client: TestClient) -> None:
     assert response.json() == {"status": "healthy", "engine": "fsm-agent-runtime"}
 
 
+def test_dashboard_endpoint(client: TestClient) -> None:
+    """GET / must return HTML dashboard page."""
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "AURA CLINICAL" in response.text
+
+
 def test_execute_audit_safe_endpoint(client: TestClient) -> None:
     """POST /api/v1/clinical/audit must return 200 with SAFE verdict for clean notes."""
     payload = {
