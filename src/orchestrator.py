@@ -6,7 +6,6 @@ Coordinates LLM semantic extraction, FSM lifecycle, AST sandboxing, dosage ceili
 import asyncio
 import json
 import logging
-import re
 import time
 import uuid
 from datetime import UTC, datetime
@@ -51,13 +50,6 @@ PATIENT_REGISTRY = {
     },
 }
 
-KNOWN_SUBSTANCES = [
-    "metformin", "metformina", "radiocontrast", "contrast", "contraste",
-    "warfarin", "warfarina", "aspirin", "aspirina", "tramadol", "ssri",
-    "methotrexate", "nsaid", "paracetamol", "ibuprofen", "ibuprofeno",
-    "cocaine", "cocaina", "cocaína", "fentanyl", "fentanilo",
-]
-
 NORMALIZATION_MAP = {
     "metformina": "metformin",
     "contrast": "radiocontrast",
@@ -81,64 +73,23 @@ NORMALIZATION_MAP = {
 }
 
 
-def _span_based_fallback_extraction(raw_text: str) -> list[ExtractedMedication]:
-    """
-    Syntactic span-based fallback for CI environments where Ollama is offline.
-    Associates dosage amounts strictly to the adjacent medication name.
-    """
-    extracted: list[ExtractedMedication] = []
-    seen = set()
-
-    # Pattern finding drug and its immediately adjacent dosage (before or after)
-    for drug in KNOWN_SUBSTANCES:
-        # Match e.g. "10 gramos de paracetamol" or "paracetamol 500mg"
-        pattern = re.compile(
-            rf"(?:(\d+(?:[.,]\d+)?)\s*(mg|miligramos|g|gr|gramos|mcg)\s+(?:de\s+)?)?\b{drug}\b(?:\s+(?:de\s+)?(\d+(?:[.,]\d+)?)\s*(mg|miligramos|g|gr|gramos|mcg))?",
-            re.IGNORECASE,
-        )
-        match = pattern.search(raw_text)
-        if match:
-            canonical = NORMALIZATION_MAP.get(drug.lower(), drug.lower())
-            if canonical in seen:
-                continue
-            seen.add(canonical)
-
-            raw_val = match.group(1) or match.group(3)
-            unit = (match.group(2) or match.group(4) or "mg").lower()
-            dose_mg = None
-
-            if raw_val:
-                try:
-                    val = float(raw_val.replace(",", "."))
-                    if unit in ("g", "gr", "gramos"):
-                        dose_mg = val * 1000.0
-                    elif unit in ("mcg",):
-                        dose_mg = val / 1000.0
-                    else:
-                        dose_mg = val
-                except ValueError:
-                    dose_mg = None
-
-            route = "injected" if "inyectado" in raw_text.lower() else "oral" if "oral" in raw_text.lower() else None
-            extracted.append(ExtractedMedication(name=canonical, dose_mg=dose_mg, route=route))
-
-    return extracted
-
-
 async def extract_medications(raw_text: str) -> list[ExtractedMedication]:
     """
     Extract active medications, substances, and convert dosages using real LLM reasoning.
-    Queries local Qwen 2.5 via Ollama; falls back to span-based parser if Ollama is unreachable.
+    Queries local Qwen 2.5 via Ollama. Fails loud with EngineError if LLM service is unavailable.
     """
     prompt = (
         "You are an expert clinical pharmacologist entity extractor. "
-        "Analyze this physician bedside note and extract every medication, contrast agent, or substance mentioned. "
+        "Analyze this physician bedside note and extract every medication, radiocontrast media, drug, or substance mentioned "
+        "(including diagnostic imaging contrast agents like CT contrast, contrast study, or radiocontrast dye). "
         "For each substance, identify: "
-        "- name: normalized canonical active substance in lowercase (e.g., 'paracetamol', 'metformin', 'tramadol', 'radiocontrast', 'aspirin', 'cocaine', 'fentanyl'). "
-        "- dose_mg: exact quantity converted to MILLIGRAMS (e.g., 5g = 5000, 500mg = 500, 10 gramos = 10000). If no dose mentioned, return null. "
+        "- name: canonical active substance or agent in lowercase (e.g., 'metformin', 'radiocontrast', 'paracetamol', 'tramadol', 'aspirin', 'cocaine', 'fentanyl'). "
+        "Note: any imaging contrast agent must be extracted as 'radiocontrast'. "
+        "- dose_mg: exact quantity in MILLIGRAMS if stated, otherwise null. "
         "- route: 'oral', 'injected', 'IV', or null. "
         f"Physician Note: \"{raw_text}\"\n"
-        "Return ONLY a JSON list of objects. Example: [{\"name\": \"paracetamol\", \"dose_mg\": 10000, \"route\": \"oral\"}]\n"
+        "Return pure JSON with a single list under 'medications'. Example: "
+        "{\"medications\": [{\"name\": \"metformin\", \"dose_mg\": 850, \"route\": \"oral\"}, {\"name\": \"radiocontrast\", \"dose_mg\": null, \"route\": \"IV\"}]}\n"
         "JSON:"
     )
 
@@ -153,43 +104,56 @@ async def extract_medications(raw_text: str) -> list[ExtractedMedication]:
                     "format": "json",
                 },
             )
-            if resp.status_code == 200:
-                body = resp.json()
-                raw_json = body.get("response", "[]").strip()
-                data = json.loads(raw_json)
+            if resp.status_code != 200:
+                raise EngineError(f"Ollama inference error HTTP {resp.status_code}: {resp.text}")
 
-                if isinstance(data, dict):
-                    for v in data.values():
-                        if isinstance(v, list):
-                            data = v
-                            break
+            body = resp.json()
+            raw_json = body.get("response", "{}").strip()
+            data = json.loads(raw_json)
 
-                if isinstance(data, list) and data:
-                    meds: list[ExtractedMedication] = []
-                    for item in data:
-                        if isinstance(item, dict) and "name" in item:
-                            raw_name = str(item["name"]).lower().strip()
-                            med_name = NORMALIZATION_MAP.get(raw_name, raw_name)
-                            dose_val = item.get("dose_mg")
-                            try:
-                                dose_flt = float(dose_val) if dose_val is not None else None
-                            except (ValueError, TypeError):
-                                dose_flt = None
+            raw_items = []
+            if isinstance(data, dict):
+                for v in data.values():
+                    if isinstance(v, list):
+                        raw_items.extend(v)
+            elif isinstance(data, list):
+                raw_items = data
 
-                            meds.append(
-                                ExtractedMedication(
-                                    name=med_name,
-                                    dose_mg=dose_flt,
-                                    route=item.get("route"),
-                                )
-                            )
-                    if meds:
-                        return meds
-    except (httpx.RequestError, json.JSONDecodeError, KeyError) as exc:
-        logger.debug(f"Ollama request skipped or failed: {exc}")
+            meds: list[ExtractedMedication] = []
+            seen = set()
 
-    # Accurate span-based fallback for offline CI execution
-    return _span_based_fallback_extraction(raw_text)
+            for item in raw_items:
+                if isinstance(item, dict) and "name" in item:
+                    raw_name = str(item["name"]).lower().strip()
+                    med_name = NORMALIZATION_MAP.get(raw_name, raw_name)
+                    if med_name in seen:
+                        continue
+                    seen.add(med_name)
+
+                    dose_val = item.get("dose_mg")
+                    try:
+                        dose_flt = float(dose_val) if dose_val is not None else None
+                    except (ValueError, TypeError):
+                        dose_flt = None
+
+                    meds.append(
+                        ExtractedMedication(
+                            name=med_name,
+                            dose_mg=dose_flt,
+                            route=item.get("route"),
+                        )
+                    )
+            return meds
+
+    except httpx.RequestError as exc:
+        logger.error(f"Ollama LLM connection failed: {exc}")
+        raise EngineError(
+            f"Clinical AI Ingestion Error: Ollama service at {OLLAMA_API_URL} is unreachable. "
+            "Real LLM inference is mandatory for patient safety audits."
+        ) from exc
+    except json.JSONDecodeError as exc:
+        logger.error(f"Malformed LLM JSON output: {exc}")
+        raise EngineError(f"Clinical AI Extractor Error: Malformed JSON from LLM: {exc}") from exc
 
 
 class ClinicalOrchestrator:
