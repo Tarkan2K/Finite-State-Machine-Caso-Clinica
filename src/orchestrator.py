@@ -25,12 +25,25 @@ from src.types import (
     PatientAuditRecord,
 )
 
-# Known active substances regex for deterministic local extraction
+# Known active substances regex (bilingual: English + Spanish clinical variants)
 KNOWN_DRUGS_PATTERN = re.compile(
-    r"\b(metformin|radiocontrast|contrast|warfarin|aspirin|tramadol|ssri|methotrexate|nsaid|paracetamol|ibuprofen)\b",
+    r"\b(metformin|metformina|radiocontrast|contrast|contraste|warfarin|warfarina|aspirin|aspirina|tramadol|ssri|methotrexate|nsaid|paracetamol|ibuprofen|ibuprofeno|cocaine|cocaina|cocaína|fentanyl|fentanilo)\b",
     re.IGNORECASE,
 )
 DOSE_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*(mg|g|mcg|ml)", re.IGNORECASE)
+
+# Bilingual normalization dictionary to active pharmaceutical ingredients
+NORMALIZATION_MAP = {
+    "metformina": "metformin",
+    "contrast": "radiocontrast",
+    "contraste": "radiocontrast",
+    "warfarina": "warfarin",
+    "aspirina": "aspirin",
+    "ibuprofeno": "ibuprofen",
+    "cocaina": "cocaine",
+    "cocaína": "cocaine",
+    "fentanilo": "fentanyl",
+}
 
 
 async def extract_medications(raw_text: str) -> list[ExtractedMedication]:
@@ -38,7 +51,6 @@ async def extract_medications(raw_text: str) -> list[ExtractedMedication]:
     Extract medication entities from clinical text.
     If OLLAMA_HOST is set, queries local Ollama; otherwise uses fast regex extractor.
     """
-    # Context switch for async event loop
     await asyncio.sleep(0.005)
 
     ollama_host = os.environ.get("OLLAMA_HOST")
@@ -57,13 +69,15 @@ async def extract_medications(raw_text: str) -> list[ExtractedMedication]:
                     parsed = json.loads(res.json().get("response", "[]"))
                     if isinstance(parsed, list) and parsed:
                         return [
-                            ExtractedMedication(name=str(p["name"]).lower().strip())
+                            ExtractedMedication(
+                                name=NORMALIZATION_MAP.get(str(p["name"]).lower().strip(), str(p["name"]).lower().strip())
+                            )
                             for p in parsed if "name" in p
                         ]
         except (httpx.RequestError, KeyError):
             pass
 
-    # Deterministic high-speed extraction
+    # Deterministic bilingual extraction
     matches = KNOWN_DRUGS_PATTERN.findall(raw_text)
     dose_match = DOSE_PATTERN.search(raw_text)
 
@@ -78,17 +92,16 @@ async def extract_medications(raw_text: str) -> list[ExtractedMedication]:
     seen = set()
 
     for match in matches:
-        normalized = match.lower()
-        if normalized == "contrast":
-            normalized = "radiocontrast"
+        raw_name = match.lower().strip()
+        canonical_name = NORMALIZATION_MAP.get(raw_name, raw_name)
 
-        if normalized not in seen:
-            seen.add(normalized)
+        if canonical_name not in seen:
+            seen.add(canonical_name)
             extracted.append(
                 ExtractedMedication(
-                    name=normalized,
+                    name=canonical_name,
                     dose_mg=dose_val,
-                    route="oral" if "oral" in raw_text.lower() else None,
+                    route="oral" if ("oral" in raw_text.lower() or "boca" in raw_text.lower()) else None,
                 )
             )
 

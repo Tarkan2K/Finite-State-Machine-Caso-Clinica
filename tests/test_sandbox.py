@@ -68,6 +68,14 @@ def test_critical_interaction_detection_commutative() -> None:
     assert alerts_reverse[0].severity == "CRITICAL"
 
 
+def test_speedball_hazard_detection() -> None:
+    """Cocaine + Fentanyl lethal combination must be intercepted."""
+    alerts = check_drug_interactions(["cocaine", "fentanyl"])
+    assert len(alerts) == 1
+    assert alerts[0].severity == "CRITICAL"
+    assert "respiratory depression" in alerts[0].description.lower()
+
+
 def test_multiple_critical_interactions() -> None:
     """All co-occurring dangerous pairs must be identified."""
     meds = ["warfarin", "aspirin", "tramadol", "ssri"]

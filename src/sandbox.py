@@ -46,6 +46,11 @@ CRITICAL_INTERACTIONS: dict[frozenset[str], str] = {
         "NSAIDs reduce renal perfusion and clearance of methotrexate, causing severe "
         "bone marrow suppression and nephrotoxicity."
     ),
+    frozenset({"cocaine", "fentanyl"}): (
+        "Concurrent administration of cocaine (potent CNS stimulant) and fentanyl "
+        "(high-potency opioid) causes lethal respiratory depression, fatal cardiac arrhythmia, "
+        "and acute cardiovascular collapse (speedball toxicity)."
+    ),
 }
 
 
@@ -114,7 +119,7 @@ def check_drug_interactions(medications: list[str]) -> list[DrugInteractionAlert
                         drug_b=drug_b,
                         severity="CRITICAL",
                         description=CRITICAL_INTERACTIONS[pair],
-                        cie10_codes=["T36-T50"],
+                        cie10_codes=["T36-T50", "T40.1", "T40.4"],
                     )
                 )
 
