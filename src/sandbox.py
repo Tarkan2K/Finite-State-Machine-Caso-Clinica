@@ -1,7 +1,8 @@
 """
 Execution sandbox and clinical safety validation layer.
 Provides AST-based expression whitelisting, drug-drug contraindication detection,
-and posology ceiling guardrails (lethal overdose protection).
+patient allergy matching, and posology ceiling guardrails (lethal overdose protection).
+Operates directly on canonical RxNorm active substances without hardcoded synonym maps.
 """
 
 import ast
@@ -29,30 +30,7 @@ BLOCKED_NAMES = frozenset(
     }
 )
 
-# Canonical substance and bilingual synonym mapping
-SYNONYM_MAP: dict[str, str] = {
-    "metformina": "metformin",
-    "contrast": "radiocontrast",
-    "contraste": "radiocontrast",
-    "medio de contraste": "radiocontrast",
-    "warfarina": "warfarin",
-    "aspirina": "aspirin",
-    "ibuprofeno": "ibuprofen",
-    "paracetamol": "paracetamol",
-    "acetaminofen": "paracetamol",
-    "acetaminofén": "paracetamol",
-    "tylenol": "paracetamol",
-    "tramadol": "tramadol",
-    "cocaina": "cocaine",
-    "cocaína": "cocaine",
-    "fentanilo": "fentanyl",
-    "metotrexato": "methotrexate",
-    "aine": "nsaid",
-    "aines": "nsaid",
-    "isrs": "ssri",
-}
-
-# Known critical clinical interactions (active substance pairs -> description)
+# Known critical clinical interactions (canonical substance pairs -> description)
 CRITICAL_INTERACTIONS: dict[frozenset[str], str] = {
     frozenset({"metformin", "radiocontrast"}): (
         "Radiocontrast media induces acute kidney injury, impairing metformin clearance "
@@ -68,6 +46,14 @@ CRITICAL_INTERACTIONS: dict[frozenset[str], str] = {
     ),
     frozenset({"methotrexate", "nsaid"}): (
         "NSAIDs reduce renal perfusion and clearance of methotrexate, causing severe "
+        "bone marrow suppression and nephrotoxicity."
+    ),
+    frozenset({"methotrexate", "aspirin"}): (
+        "Aspirin reduces renal perfusion and clearance of methotrexate, causing severe "
+        "bone marrow suppression and nephrotoxicity."
+    ),
+    frozenset({"methotrexate", "ibuprofen"}): (
+        "Ibuprofen reduces renal perfusion and clearance of methotrexate, causing severe "
         "bone marrow suppression and nephrotoxicity."
     ),
     frozenset({"cocaine", "fentanyl"}): (
@@ -132,10 +118,9 @@ def validate_dose_expression(expression: str) -> float:
 
 def check_drug_interactions(medications: list[str]) -> list[DrugInteractionAlert]:
     """
-    Cross-reference extracted medications against known critical interactions.
-    Applies canonical normalization so bilingual synonyms are accurately matched.
+    Cross-reference canonical medications against known critical clinical interactions.
     """
-    normalized = [SYNONYM_MAP.get(med.lower().strip(), med.lower().strip()) for med in medications]
+    normalized = [med.lower().strip() for med in medications]
     alerts: list[DrugInteractionAlert] = []
 
     for i, drug_a in enumerate(normalized):
@@ -155,6 +140,56 @@ def check_drug_interactions(medications: list[str]) -> list[DrugInteractionAlert
     return alerts
 
 
+def check_allergy_contraindications(
+    patient_allergies: list[str],
+    ordered_medications: list[str],
+) -> list[DrugInteractionAlert]:
+    """
+    Cross-reference ordered substances against the patient's documented EHR allergy registry.
+    """
+    alerts: list[DrugInteractionAlert] = []
+    if not patient_allergies:
+        return alerts
+
+    allergies_text = " ".join(patient_allergies).lower()
+
+    for med in ordered_medications:
+        med_clean = med.lower().strip()
+        matched = False
+        allergen_label = ""
+
+        if med_clean in ("aspirin", "ibuprofen", "nsaid") and any(
+            k in allergies_text for k in ("aine", "aspirina", "ibuprofeno")
+        ):
+            matched = True
+            allergen_label = "AINEs / Ácido Acetilsalicílico"
+        elif med_clean == "radiocontrast" and any(
+            k in allergies_text for k in ("contraste", "yodado", "yodo")
+        ):
+            matched = True
+            allergen_label = "Medio de Contraste Yodado"
+        elif med_clean == "tramadol" and "tramadol" in allergies_text:
+            matched = True
+            allergen_label = "Tramadol / Opioides"
+
+        if matched:
+            alerts.append(
+                DrugInteractionAlert(
+                    drug_a=med_clean,
+                    drug_b="PATIENT_ALLERGY_ANAPHYLAXIS",
+                    severity="CRITICAL",
+                    description=(
+                        f"CRITICAL ALLERGY INTERCEPT: Patient has documented severe allergy to "
+                        f"{allergen_label}. Administering {med_clean.upper()} carries imminent "
+                        "risk of bronchospasm, severe angioedema, or fatal anaphylactic shock."
+                    ),
+                    cie10_codes=["T78.4", "T88.7"],
+                )
+            )
+
+    return alerts
+
+
 def check_dosage_safety(medications: list[ExtractedMedication]) -> list[DrugInteractionAlert]:
     """
     Evaluate prescribed dosages against maximum safe pharmacological ceilings.
@@ -163,7 +198,7 @@ def check_dosage_safety(medications: list[ExtractedMedication]) -> list[DrugInte
     overdose_alerts: list[DrugInteractionAlert] = []
 
     for med in medications:
-        canonical_name = SYNONYM_MAP.get(med.name.lower().strip(), med.name.lower().strip())
+        canonical_name = med.name.lower().strip()
         max_limit = MAX_SAFE_DAILY_DOSES_MG.get(canonical_name)
 
         # Prohibited illicit substances (e.g., cocaine) have zero clinical allowance

@@ -17,7 +17,7 @@ def test_dashboard_endpoint(client: TestClient) -> None:
     """GET / must return HTML dashboard page."""
     response = client.get("/")
     assert response.status_code == 200
-    assert "AURA CLINICAL" in response.text
+    assert "Aura Clinical" in response.text or "Hospital Intranet" in response.text
 
 
 def test_execute_audit_safe_endpoint(client: TestClient) -> None:
@@ -103,3 +103,33 @@ def test_get_safety_metrics_endpoint(client: TestClient) -> None:
     metrics_res = client.get("/api/v1/analytics/safety-metrics")
     assert metrics_res.status_code == 200
     assert isinstance(metrics_res.json(), list)
+
+
+def test_list_chilean_patients_endpoint(client: TestClient) -> None:
+    """GET /api/v1/patients must return all seeded Chilean mock patients."""
+    response = client.get("/api/v1/patients")
+    assert response.status_code == 200
+    patients = response.json()
+    assert len(patients) >= 20
+    ruts = [p["rut"] for p in patients]
+    assert "12.345.678-5" in ruts
+    assert "18.901.234-K" in ruts
+
+
+def test_get_patient_by_rut_endpoint(client: TestClient) -> None:
+    """GET /api/v1/patients/{rut} must return patient dossier with chronic meds and allergies."""
+    response = client.get("/api/v1/patients/12.345.678-5")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["nombre"] == "Eleanor Vance Riquelme"
+    assert data["edad"] == 67
+    assert "Diabetes Mellitus Tipo 2" in data["enfermedades_cronicas"]
+    assert any("Metformina" in m for m in data["farmacos_actuales"])
+
+
+def test_get_nonexistent_patient_returns_404(client: TestClient) -> None:
+    """Querying an unregistered RUT must return 404."""
+    response = client.get("/api/v1/patients/99.999.999-9")
+    assert response.status_code == 404
+    assert "no encontrado" in response.json()["detail"].lower()
+

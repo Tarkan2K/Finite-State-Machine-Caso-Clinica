@@ -1,7 +1,7 @@
 """
 FastAPI REST API routes for Aura Clinical runtime engine.
-Exposes clinical audit execution, session audit trail retrieval, and OLAP metrics.
-Serves interactive clinical bedside web dashboard at root path.
+Exposes Chilean EHR patient lookups, clinical audit execution, session retrieval, and OLAP metrics.
+Serves the ultra-lightweight Web2 / Windows XP bedside dashboard at root path.
 """
 
 from contextlib import asynccontextmanager
@@ -48,6 +48,41 @@ async def lifespan(app: FastAPI):
 
 
 router = APIRouter(prefix="/api/v1", tags=["Clinical Safety Engine"])
+
+
+@router.get(
+    "/patients",
+    response_model=list[dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+    summary="List Chilean Mock Patients",
+    description="Retrieve all registered Chilean patients with RUT, chronic diseases, allergies, and current medications.",
+)
+async def list_patients(
+    store: ClinicalAuditStore = Depends(get_store),
+) -> list[dict[str, Any]]:
+    """Retrieve full patient directory from DuckDB."""
+    return store.list_patients()
+
+
+@router.get(
+    "/patients/{rut}",
+    response_model=dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Get Patient by Chilean RUT",
+    description="Retrieve full EHR profile of a patient by their Chilean RUT.",
+)
+async def get_patient_by_rut(
+    rut: str,
+    store: ClinicalAuditStore = Depends(get_store),
+) -> dict[str, Any]:
+    """Retrieve individual patient file."""
+    patient = store.get_patient(rut)
+    if not patient:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Paciente con RUT '{rut}' no encontrado en el sistema.",
+        )
+    return patient
 
 
 @router.post(
@@ -123,7 +158,7 @@ async def get_safety_metrics(
 app = FastAPI(
     title="Aura Clinical — FSM Agent Runtime API",
     description="Deterministic state-machine governed execution runtime for high-stakes clinical safety agents.",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
 

@@ -1,5 +1,3 @@
-"""Definición de estados del ciclo de vida del agente. (mío)"""
-
 """Data contracts and schemas for Aura Clinical runtime engine."""
 
 from datetime import UTC, datetime
@@ -29,11 +27,31 @@ class ClinicalSafetyStatus(str, Enum):
     CRITICAL_BLOCK = "CRITICAL_BLOCK"
 
 
+class PatientRecord(BaseModel):
+    """EHR patient record with Chilean clinical demographic and pharmacological baseline."""
+
+    model_config = ConfigDict(frozen=True)
+
+    rut: str = Field(description="RUT chileno del paciente (ej. 12.345.678-5)")
+    nombre: str = Field(description="Nombre completo del paciente")
+    edad: int = Field(description="Edad en años")
+    ciudad: str = Field(description="Ciudad de residencia")
+    enfermedades_cronicas: list[str] = Field(
+        default_factory=list, description="Patologías crónicas de base"
+    )
+    alergias: list[str] = Field(
+        default_factory=list, description="Alergias conocidas a fármacos o sustancias"
+    )
+    farmacos_actuales: list[str] = Field(
+        default_factory=list, description="Fármacos y dosis crónicas actuales"
+    )
+
+
 class ClinicalNote(BaseModel):
     """Unstructured text written by a physician at bedside."""
 
     note_id: str = Field(description="Unique UUID for the clinical note")
-    patient_ref: str = Field(description="Anonymized patient reference ID")
+    patient_ref: str = Field(description="RUT o identificador del paciente")
     raw_text: str = Field(description="Free-text clinical note written by clinician")
     recorded_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
@@ -50,10 +68,10 @@ class ExtractedMedication(BaseModel):
 
 
 class DrugInteractionAlert(BaseModel):
-    """Structured clinical alert identifying a dangerous drug-drug interaction."""
+    """Structured clinical alert identifying a dangerous drug-drug interaction or contraindication."""
 
-    drug_a: str = Field(description="First interacting active substance")
-    drug_b: str = Field(description="Second interacting active substance")
+    drug_a: str = Field(description="First interacting active substance or allergen")
+    drug_b: str = Field(description="Second interacting active substance or hazard type")
     severity: Literal["LOW", "MODERATE", "CRITICAL"] = Field(
         description="Clinical severity grade"
     )
@@ -79,4 +97,4 @@ class PatientAuditRecord(BaseModel):
     alerts: list[DrugInteractionAlert]
     fsm_final_state: EngineState
     processing_time_ms: float
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime
